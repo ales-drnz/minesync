@@ -1,0 +1,137 @@
+# Vet, staticcheck and race tests on every push; on main and tags also build the
+# multi-arch hub image (amd64 + arm64) and publish it to GitHub Container Registry.
+# Tags v* additionally publish a GitHub release with the client binaries.
+#
+#   push to main   → ghcr.io/<owner>/minesync-hub:latest and :sha-<commit>
+#   tag v3.0.0     → :3.0.0 and :3.0, plus the GitHub release
+#
+# Optional secret MINESYNC_SIGN_KEY (the content of a key made with
+# `go run ./scripts/sign keygen minesync-sign.key`): when set, SHA256SUMS is
+# signed and clients verify every self-update against the embedded public key.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [server, client, scripts/sign]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    env:
+      GOWORK: 'off'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.*
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - run: go vet ./...
+      - uses: dominikh/staticcheck-action@v1
+        with:
+          version: latest
+          install-go: false
+          working-directory: ${{ matrix.module }}
+      - run: go test -race ./...
+      - name: cross-compile
+        if: matrix.module == 'client'
+        run: |
+          for t in windows/amd64 linux/arm64 darwin/arm64 darwin/amd64; do
+            GOOS=${t%/*} GOARCH=${t#*/} CGO_ENABLED=0 go build -o /dev/null . || exit 1
+          done
+
+  image:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/minesync-hub
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          secrets: |
+            minesync_sign_key=${{ secrets.MINESYNC_SIGN_KEY }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: client/go.mod
+      - name: check VERSION matches tag
+        run: test "v$(tr -d ' \r\n' < VERSION)" = "$GITHUB_REF_NAME"
+      - name: build
+        env:
+          SIGN_KEY: ${{ secrets.MINESYNC_SIGN_KEY }}
+        run: |
+          if [ -n "$SIGN_KEY" ]; then
+            printf '%s\n' "$SIGN_KEY" > "$RUNNER_TEMP/sign.key"
+            export MINESYNC_SIGN_KEY="$RUNNER_TEMP/sign.key"
+          fi
+          sh scripts/build.sh
+          rm -f "$RUNNER_TEMP/sign.key"
+      - name: release notes
+        run: |
+          awk -v v="${GITHUB_REF_NAME#v}" '
+            $0 ~ "^## \\[" v "\\]" {on=1; next}
+            on && /^## \[/ {exit}
+            on {print}' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "MineSync $GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            dist/dl/* dist/minesync-hub-*

@@ -1,0 +1,17 @@
+# build output
+dist/
+*.exe
+*.syso.tmp
+
+# signing keys: never commit the private key
+*.key
+minesync-sign*
+
+# local notes
+REVISIONE.md
+
+# editors / tools
+.claude/
+.vscode/
+.idea/
+*.log

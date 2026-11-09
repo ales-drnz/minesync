@@ -1,0 +1,9 @@
+.git
+.github
+.claude
+dist
+*.md
+*.pdf
+*.key
+scripts/genicon
+imgs

@@ -1,0 +1,98 @@
+# MineSync hub — complete example.
+#
+# The hub shares the network namespace of the ZeroTier container, so it is
+# reachable only from inside the ZeroTier network. Replace every <...>.
+
+services:
+  minesync:
+    # Published image (amd64 + arm64)...
+    image: ghcr.io/ales-drnz/minesync-hub:latest
+    # ...or build it from a copy of this repository:
+    # build:
+    #   context: /path/to/minesync
+    #   dockerfile: deploy/Dockerfile
+    #   args:
+    #     MINESYNC_DEFAULT_SERVER: http://<hub-zerotier-ip>:8084   # prefilled in the clients
+    #   secrets: [minesync_sign_key]                             # see "Signed updates" below
+    container_name: minesync
+    restart: always
+    stop_grace_period: 30s             # lets the hub finish writes on shutdown
+    network_mode: service:zerotier
+    depends_on:
+      - zerotier
+      - ztnet
+    # The image runs as 65532:65532. To use your own user on a bind mount,
+    # set it here and make sure it owns the data folder.
+    # user: "1000:100"
+    volumes:
+      - minesync_data:/data          # local disk: never SMB/NFS
+      # - /srv/minesync:/data
+    environment:
+      - TZ=Europe/Rome
+      - MINESYNC_ADDR=:8084
+      # Language of the Telegram bot and of the logs: en or it
+      # (the web UI and the clients follow each user's own language).
+      - MINESYNC_LANG=en
+
+      # ── Authentication = the ZeroTier network ──
+      # A request from an authorised member's IP is that member, with its
+      # ZTNET name. No passwords, no tokens.
+      - ZTNET_URL=http://ztnet:3000
+      - ZTNET_API_TOKEN=<ztnet-api-token>
+      - ZTNET_NETWORK_ID=<network-id>
+      # Admins: ZTNET member names or 10-character node ids, comma-separated.
+      # Node ids are safer: two members may share a name.
+      - MINESYNC_ADMINS=<node-id>
+
+      # Extra names you use to open the web UI (IP addresses always work).
+      # - MINESYNC_HOSTS=minesync.lan
+
+      # Generations kept by the automatic retention (plus the last 24 hours
+      # and one per day for the last week).
+      # - MINESYNC_KEEP=30
+
+      # ── Fixed address via DNS (optional) ──
+      # zerotier.<space>.internal → ZeroTier IP of whoever is hosting now.
+      # It is only a lookup: the game traffic stays peer-to-peer.
+      # "internal" is reserved by ICANN for private use (do not use ".local",
+      # that is mDNS). MINESYNC_DNS_ADDR=off disables it.
+      - MINESYNC_DNS_ZONE=internal
+      - MINESYNC_DNS_ADDR=:53
+      # On multi-homed hosts you can bind it to the ZeroTier IP only:
+      # - MINESYNC_DNS_ADDR=<hub-zerotier-ip>:53
+
+      # ── Telegram bot (optional) ──
+      # Announces when a server opens and closes.
+      #   1) talk to @BotFather → /newbot → it gives you the TOKEN
+      #   2) add the bot to your group
+      #   3) write any message in the group, then open
+      #      https://api.telegram.org/bot<TOKEN>/getUpdates and copy
+      #      result[0].message.chat.id (negative for groups, e.g. -1001234567890)
+      # - MINESYNC_TELEGRAM_TOKEN=<bot-token>
+      # - MINESYNC_TELEGRAM_CHAT=<chat-id>
+
+volumes:
+  minesync_data:
+
+# secrets:
+#   minesync_sign_key:
+#     file: ./minesync-sign.key
+
+# ── Port 53 ──
+# The binary in the image may bind port 53 without root. If your setup uses
+# no-new-privileges, add to the *zerotier* service (it owns the namespace):
+#   sysctls:
+#     - net.ipv4.ip_unprivileged_port_start=53
+# If port 53 cannot be opened the hub logs a warning and keeps running.
+#
+# ── ZeroTier DNS (once) ──
+# In ZTNET → network → DNS: search domain "internal", server <hub-zerotier-ip>.
+# Every member enables "Allow DNS" (zerotier-cli set <network-id> allowDNS=1).
+# Linux needs systemd-resolved plus zerotier-systemd-manager (or a ZeroTier
+# build with resolved support). Windows, if .internal does not resolve, as admin:
+#   Add-DnsClientNrptRule -Namespace ".internal" -NameServers "<hub-zerotier-ip>"
+#
+# ── Signed updates ──
+#   go run ./scripts/sign keygen minesync-sign.key
+# then build with the secret above: clients will accept only updates signed
+# with that key.

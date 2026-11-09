@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MineSync Hub</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%233c8527'/%3E%3Cg fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' transform='translate(3.6 3.6) scale(0.7)'%3E%3Cpath d='M12 2 20.66 7 20.66 17 12 22 3.34 17 3.34 7Z'/%3E%3Cpath d='m3.34 7 8.66 5 8.66-5'/%3E%3Cpath d='M12 12v10'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <span class="logo" id="logo"></span>
+      <span class="brand-txt">MINESYNC <span class="ver" id="ver"></span></span>
+    </div>
+    <nav class="tabs">
+      <a id="tab-home" href="#" data-i18n="nav.home">Server</a>
+      <a id="tab-dl" href="#" data-i18n="nav.dl">Client</a>
+    </nav>
+    <div class="head-right">
+      <span id="conn" class="connpill off"><span class="dot"></span><span id="conn-txt">offline</span></span>
+      <span id="who" class="who"></span>
+      <div id="lang-sw" class="langsw" role="group" data-i18n-title="lang.title" title="Lingua">
+        <button type="button" data-lang="it" lang="it">IT</button>
+        <button type="button" data-lang="en" lang="en">EN</button>
+      </div>
+      <button id="theme-btn" class="ghost navbtn icon" data-i18n-title="theme.title" title="Tema chiaro/scuro"></button>
+    </div>
+  </header>
+  <main id="main"></main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
