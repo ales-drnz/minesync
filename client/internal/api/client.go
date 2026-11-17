@@ -215,6 +215,9 @@ var ErrStalled = i18n.NewError("trasferimento fermo: nessun byte in movimento da
 type Client struct {
 	Base string
 	HC   *http.Client
+	// UC: client per gli upload (blob e avvio del push), con un buffer di
+	// invio piccolo: vedi uploadTransport. nil = HC (es. nei test).
+	UC *http.Client
 	// IdleTimeout: watchdog di progresso per upload e download dei blob
 	// (0 = DefaultIdleTimeout).
 	IdleTimeout time.Duration
@@ -247,7 +250,50 @@ func New(base string) *Client {
 		Base: strings.TrimRight(base, "/"),
 		// niente timeout globale: i blob possono essere grandi (c'è il watchdog)
 		HC: &http.Client{Timeout: 0, Transport: tr},
+		UC: &http.Client{Timeout: 0, Transport: uploadTransport()},
 	}
+}
+
+// uploadSendBuffer: buffer di invio del socket per gli upload. Il default del
+// sistema (su Linux fino a 4 MiB) inghiotte un intero blob in un colpo: Go lo
+// considera già inviato e aspetta la risposta mentre i byte stanno ancora
+// uscendo da una linea lenta, così l'attesa delle intestazioni (e il watchdog
+// di progresso) scadevano a metà invio. Con un buffer piccolo la scrittura
+// avanza al passo della rete e il progresso che vediamo è quello vero.
+const uploadSendBuffer = 64 << 10
+
+// uploadHeaderTimeout: attesa della risposta dopo l'ultimo byte affidato al
+// socket. Con uploadSendBuffer restano in coda al massimo 64 KiB, ma su una
+// linea molto lenta divisa fra più upload servono comunque decine di secondi.
+const uploadHeaderTimeout = 2 * time.Minute
+
+func uploadTransport() *http.Transport {
+	d := &net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second}
+	return &http.Transport{
+		Proxy: hubProxy(),
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			conn, err := d.DialContext(ctx, network, addr)
+			if err == nil {
+				if tc, ok := conn.(*net.TCPConn); ok {
+					_ = tc.SetWriteBuffer(uploadSendBuffer) // best effort
+				}
+			}
+			return conn, err
+		},
+		TLSHandshakeTimeout:   tlsHandshakeTimeout,
+		ResponseHeaderTimeout: uploadHeaderTimeout,
+		ExpectContinueTimeout: time.Second,
+		IdleConnTimeout:       90 * time.Second,
+		MaxIdleConnsPerHost:   16,
+		ForceAttemptHTTP2:     false, // un flusso TCP per upload: il buffer piccolo vale per ognuno
+	}
+}
+
+func (c *Client) uploadHC() *http.Client {
+	if c.UC != nil {
+		return c.UC
+	}
+	return c.HC
 }
 
 // req costruisce una richiesta verso l'API. Ogni richiesta porta
@@ -611,7 +657,7 @@ func (c *Client) postBody(ctx context.Context, path string, body []byte, gzipped
 	if gzipped {
 		req.Header.Set("Content-Encoding", "gzip")
 	}
-	res, err := c.HC.Do(req)
+	res, err := c.uploadHC().Do(req)
 	if err != nil {
 		return out, netError(explain(wctx, err))
 	}
@@ -638,7 +684,7 @@ func (c *Client) UploadBlob(ctx context.Context, id, pushID, hash string, r io.R
 	} else {
 		req.ContentLength = size
 	}
-	res, err := c.HC.Do(req)
+	res, err := c.uploadHC().Do(req)
 	if err != nil {
 		return netError(explain(wctx, err))
 	}
