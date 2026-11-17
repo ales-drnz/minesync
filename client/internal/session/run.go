@@ -116,6 +116,12 @@ func (s *Session) pullAndLaunch(ctx context.Context) (*loopState, error) {
 		s.note(i18n.Sf("Java %s ok", java.Version))
 	}
 
+	javaLbl := orDefault(java.Version, "ok")
+	if !java.Found {
+		javaLbl = i18n.S("scelto dallo script del pack")
+	}
+	s.emit(Event{Kind: EvLaunch, Java: javaLbl, Script: info.LaunchLabel(), Port: info.Port})
+
 	s.setState(StateLaunching)
 	s.note(i18n.Sf("Avvio: %s", orDefault(info.LaunchNote, strings.Join(info.Launch, " "))))
 	sup, err := mc.Start(ctx, info, javaExe)

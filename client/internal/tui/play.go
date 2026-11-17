@@ -465,6 +465,13 @@ func (p *playScreen) applyEvent(ev session.Event) {
 		}
 	case session.EvPlayers:
 		p.players = ev.Players
+	case session.EvLaunch:
+		// il pull ha portato script e runtime: i valori calcolati prima del
+		// Play (cartella magari ancora vuota) non valgono più
+		p.java, p.script = ev.Java, ev.Script
+		if ev.Port != "" {
+			p.port = ev.Port
+		}
 	case session.EvSaved:
 		p.lastGen = ev.Gen
 		p.lastSave = time.Now()

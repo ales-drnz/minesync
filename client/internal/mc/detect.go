@@ -31,6 +31,7 @@ type ServerInfo struct {
 	JavaMajor   int      // Java richiesto dichiarato dal server jar (0 = ignoto)
 	Port        string
 	MOTD        string
+	Empty       bool // cartella vuota: il server non è ancora stato scaricato
 }
 
 // stem degli script di avvio realmente usati nei server pack in circolazione.
@@ -87,6 +88,9 @@ func Inspect(dir string) ServerInfo {
 	dir = descendToServerRoot(dir)
 	ls := listRoot(dir)
 	info := ServerInfo{Dir: dir}
+	if entries, err := os.ReadDir(dir); err != nil || len(entries) == 0 {
+		info.Empty = true
+	}
 	info.Scripts = findStartScripts(ls)
 	info.StartScript = pickStartScript(info.Scripts)
 	info.Loader = detectLoader(ls)
@@ -115,6 +119,21 @@ func Inspect(dir string) ServerInfo {
 		f.Close()
 	}
 	return info
+}
+
+// LaunchLabel descrive in breve come verrà avviato il server: il nome dello
+// script se c'è, altrimenti il jar lanciato direttamente ("?" se non si sa).
+func (info ServerInfo) LaunchLabel() string {
+	if info.StartScript != "" {
+		return filepath.Base(info.StartScript)
+	}
+	if len(info.Launch) >= 3 && info.Launch[1] == "-jar" {
+		return info.Launch[2]
+	}
+	if len(info.Launch) > 0 {
+		return info.Launch[0]
+	}
+	return "?"
 }
 
 // descendToServerRoot scende di un livello quando il server sta dentro una

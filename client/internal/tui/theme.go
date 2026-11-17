@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -205,15 +204,4 @@ func truncate(s string, w int) string {
 
 // launchLabel descrive in breve come verrà avviato il server: il nome dello
 // script se c'è, altrimenti il jar lanciato direttamente.
-func launchLabel(info mc.ServerInfo) string {
-	if info.StartScript != "" {
-		return filepath.Base(info.StartScript)
-	}
-	if len(info.Launch) >= 3 && info.Launch[1] == "-jar" {
-		return info.Launch[2]
-	}
-	if len(info.Launch) > 0 {
-		return info.Launch[0]
-	}
-	return "?"
-}
+func launchLabel(info mc.ServerInfo) string { return info.LaunchLabel() }

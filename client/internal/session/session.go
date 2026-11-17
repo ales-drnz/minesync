@@ -64,8 +64,9 @@ const (
 	EvConsole
 	EvNote
 	EvPlayers
-	EvSaved // autosave+push completato
-	EvDone  // sessione finita (Err eventuale)
+	EvSaved  // autosave+push completato
+	EvLaunch // pull fatto, server in avvio: Java, script e porta effettivi
+	EvDone   // sessione finita (Err eventuale)
 )
 
 // Event è una notifica della sessione verso la UI.
@@ -82,6 +83,9 @@ type Event struct {
 	Players []string
 	Gen     int
 	Err     error
+	// EvLaunch: come viene avviato davvero il server, deciso DOPO il pull
+	// (prima la cartella può essere vuota e la UI non ha di che giudicare)
+	Java, Script, Port string
 }
 
 // ErrLockLost: il lock dello spazio non è più nostro (forzato da un altro,

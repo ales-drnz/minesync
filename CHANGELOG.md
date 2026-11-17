@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.1.1] - 2026-11-17
+
+### Fixed
+
+- The client said Java was "missing" when the server folder had never been downloaded yet (first Play on a new PC, typically on Windows), and kept saying it during the session even after the pull had brought the pack's own Java runtime and the server was running. The dashboard now says "after the first pull" for an empty folder, and the session panel shows the Java and start script actually used.
+
 ## [3.1.0] - 2026-11-17
 
 ### Added

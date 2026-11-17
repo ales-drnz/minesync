@@ -714,5 +714,8 @@ var catalogEN = map[string]string{
 
 	"→ userebbe ": "→ would use ",
 
-	"⚠ nessun Java %d installato": "⚠ no Java %d installed",
+	"⚠ nessun Java %d installato":  "⚠ no Java %d installed",
+	"scelto dallo script del pack": "chosen by the pack's script",
+
+	"dopo il primo pull": "after the first pull",
 }

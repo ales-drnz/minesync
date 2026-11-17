@@ -551,8 +551,15 @@ func (s *spaceScreen) viewLocal(colW int) string {
 		rows = []string{sMuted.Render(i18n.S("cartella  ")) + sText.Render(truncate(s.local, colW-14))}
 		if s.sp.Profile == "minecraft" {
 			script := sErr.Render(i18n.S("non so come avviarlo"))
-			if len(s.info.Launch) > 0 {
+			runtime := s.javaText()
+			switch {
+			case len(s.info.Launch) > 0:
 				script = sOK.Render(launchLabel(s.info))
+			case s.info.Empty:
+				// cartella mai scaricata: script e runtime arrivano col pull,
+				// non è un errore (e il Java del pack spesso è lì dentro)
+				script = sMuted.Render(i18n.S("dopo il primo pull"))
+				runtime = sMuted.Render(i18n.S("dopo il primo pull"))
 			}
 			loader := s.info.Loader
 			if s.info.Version != "" {
@@ -561,7 +568,7 @@ func (s *spaceScreen) viewLocal(colW int) string {
 			rows = append(rows,
 				sMuted.Render("loader    ")+sText.Render(orDash(loader)),
 				sMuted.Render("script    ")+script,
-				sMuted.Render("runtime   ")+s.javaText())
+				sMuted.Render("runtime   ")+runtime)
 		}
 	}
 	if s.linking {
