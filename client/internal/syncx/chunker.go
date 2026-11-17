@@ -143,3 +143,113 @@ func HashAndChunkFile(path string, size int64) (whole string, chunks []api.Chunk
 	}
 	return hex.EncodeToString(wholeH.Sum(nil)), cw.Close(), nil
 }
+
+// teeChunkWriter è un chunkWriter che tiene anche i byte del chunk corrente
+// e li consegna, insieme al suo hash, a onCut. Stesso algoritmo e stessi
+// confini di chunkWriter (lo verifica un test).
+type teeChunkWriter struct {
+	*chunkWriter
+	buf   []byte
+	onCut func(hash string, data []byte) error
+	err   error
+}
+
+func (t *teeChunkWriter) Write(p []byte) (int, error) {
+	if t.err != nil {
+		return 0, t.err
+	}
+	start := 0
+	for i, b := range p {
+		t.gear = t.gear<<1 + gearTable[b]
+		t.n++
+		if t.n < chunkMin {
+			continue
+		}
+		mask := uint64(maskS)
+		if t.n > chunkAvg {
+			mask = maskL
+		}
+		if t.gear&mask == 0 || t.n >= chunkMax {
+			t.h.Write(p[start : i+1])
+			t.buf = append(t.buf, p[start:i+1]...)
+			t.cut()
+			t.emit()
+			start = i + 1
+		}
+	}
+	t.h.Write(p[start:])
+	t.buf = append(t.buf, p[start:]...)
+	return len(p), t.err
+}
+
+// emit consegna l'ultimo chunk tagliato.
+func (t *teeChunkWriter) emit() {
+	if t.err == nil {
+		t.err = t.onCut(t.chunks[len(t.chunks)-1].Hash, t.buf)
+	}
+	t.buf = t.buf[:0]
+}
+
+// Close chiude l'ultimo chunk parziale e lo consegna.
+func (t *teeChunkWriter) Close() ([]api.Chunk, error) {
+	if t.n > 0 {
+		t.cut()
+		t.emit()
+	}
+	return t.chunks, t.err
+}
+
+// hashChunkTee è HashAndChunkFile che, se tee non è nil, consegna a tee ogni
+// blob letto (il file intero se piccolo, altrimenti ogni chunk). Così lo
+// snapshot legge ogni file UNA volta sola: hash, chunk e copia nell'outbox.
+func hashChunkTee(path string, size int64, tee func(hash string, data []byte) error) (string, []api.Chunk, error) {
+	if tee == nil {
+		return HashAndChunkFile(path, size)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return "", nil, err
+	}
+	defer f.Close()
+	if size < ChunkThreshold {
+		data, err := io.ReadAll(io.LimitReader(f, ChunkThreshold))
+		if err != nil {
+			return "", nil, err
+		}
+		h := hashBytes(data)
+		if int64(len(data)) != size {
+			// cambiato tra lo stat e la lettura: hashStable lo vede dallo
+			// stat successivo e rilegge, inutile copiarlo
+			return h, nil, nil
+		}
+		return h, nil, tee(h, data)
+	}
+	wholeH := sha256.New()
+	tw := &teeChunkWriter{chunkWriter: newChunkWriter(), onCut: tee}
+	buf := make([]byte, 1<<20)
+	for {
+		n, rerr := f.Read(buf)
+		if n > 0 {
+			wholeH.Write(buf[:n])
+			if _, err := tw.Write(buf[:n]); err != nil {
+				return "", nil, err
+			}
+		}
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			return "", nil, rerr
+		}
+	}
+	chunks, err := tw.Close()
+	if err != nil {
+		return "", nil, err
+	}
+	return hex.EncodeToString(wholeH.Sum(nil)), chunks, nil
+}
+
+func hashBytes(b []byte) string {
+	s := sha256.Sum256(b)
+	return hex.EncodeToString(s[:])
+}

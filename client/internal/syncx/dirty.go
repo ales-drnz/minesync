@@ -3,6 +3,7 @@ package syncx
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -86,16 +87,25 @@ func (e *Engine) checkDirty(ctx context.Context, local api.Manifest, remote api.
 	if base == genPulling {
 		return nil, nil // pull interrotto: il locale era pulito quando è partito
 	}
+	// La base è "nota" solo se il numero E il digest combaciano (C1): dopo
+	// un ripristino del NAS o uno spazio ricreato la generazione con lo
+	// stesso numero è un'altra, e fidarsi del numero faceva credere "fast
+	// forward" un push che avrebbe cancellato il lavoro di altri.
 	var baseFiles api.Manifest
+	known := false
 	switch {
 	case base > 0 && base == remote.Gen:
-		baseFiles = remote.Files
+		if e.baseKnown(remote.Digest) {
+			baseFiles, known = remote.Files, true
+		}
 	case base > 0:
 		m, err := e.remoteManifest(ctx, base)
 		var ae *api.APIError
 		switch {
 		case err == nil:
-			baseFiles = m.Files
+			if e.baseKnown(m.Digest) {
+				baseFiles, known = m.Files, true
+			}
 		case errors.As(err, &ae) && ae.Status == 404:
 			// generazione di base non più sull'hub (retention): base ignota,
 			// si confronta con HEAD come per una cartella mai sincronizzata
@@ -112,6 +122,11 @@ func (e *Engine) checkDirty(ctx context.Context, local api.Manifest, remote api.
 		baseFiles = remote.Files
 	} else if sameContent(local, baseFiles, e.Matcher) {
 		return nil, nil
+	}
+	if !known {
+		// base ignota: mai un fast-forward automatico (Diverged() = vero
+		// appena l'hub ha generazioni), decide l'utente
+		base = 0
 	}
 	d := &DirtyLocalError{BaseGen: base, HubHead: remote.Head}
 	for rel, fm := range local {
@@ -208,4 +223,83 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return config.ReplaceFile(tmp, dst)
+}
+
+// rescueAfterInterruptedPull: dopo un pull interrotto il locale è un misto di
+// versione di partenza (PrevGen) e versione dell'hub, e non c'è stato alcun
+// controllo delle modifiche locali. Prima si considerava pulito e il pull
+// ripetuto sovrascriveva tutto: chi aveva giocato o modificato qualcosa nel
+// frattempo lo perdeva. Ora si salvano i file che il pull toccherebbe e che
+// non sono né l'una né l'altra versione (se la partenza è ignota, tutti
+// quelli diversi dall'hub).
+func (e *Engine) rescueAfterInterruptedPull(ctx context.Context, plan PullPlan, local api.Manifest) ([]string, error) {
+	var prev api.Manifest
+	if e.meta.PrevGen > 0 {
+		m, err := e.remoteManifest(ctx, e.meta.PrevGen)
+		var ae *api.APIError
+		switch {
+		case err == nil:
+			prev = m.Files
+		case errors.As(err, &ae) && ae.Status == 404:
+		default:
+			return nil, err
+		}
+	}
+	var out []string
+	for _, rel := range mergeSorted(plan.Download, plan.Delete) {
+		lm, ok := local[rel]
+		if !ok {
+			continue // non c'è in locale: niente da perdere
+		}
+		if rm, ok := plan.Remote[rel]; ok && rm.Hash == lm.Hash {
+			continue
+		}
+		if pm, ok := prev[rel]; ok && pm.Hash == lm.Hash {
+			continue // versione di partenza intatta: è sull'hub nella sua storia
+		}
+		out = append(out, rel)
+	}
+	return out, nil
+}
+
+// mergeSorted unisce due elenchi ordinati senza duplicati.
+func mergeSorted(a, b []string) []string {
+	seen := make(map[string]bool, len(a)+len(b))
+	out := make([]string, 0, len(a)+len(b))
+	for _, l := range [][]string{a, b} {
+		for _, s := range l {
+			if !seen[s] {
+				seen[s] = true
+				out = append(out, s)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ErrLocalDiskFull: sul disco locale non c'è spazio per il pull.
+var ErrLocalDiskFull = i18n.NewError("spazio su disco insufficiente")
+
+// LocalDiskFullError: quanto servirebbe e quanto c'è.
+type LocalDiskFullError struct {
+	Need, Free int64
+	Dir        string
+}
+
+func (e *LocalDiskFullError) Error() string {
+	return i18n.Sf("spazio su disco insufficiente in %s: il pull deve scaricare circa %s ma ne restano %s. Libera spazio e riprova (non è stato toccato niente).",
+		e.Dir, humanSize(e.Need), humanSize(e.Free))
+}
+
+func (e *LocalDiskFullError) Unwrap() error { return ErrLocalDiskFull }
+
+func humanSize(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1f GiB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
+	}
+	return fmt.Sprintf("%d KiB", n>>10)
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestMatcher(t *testing.T) {
@@ -148,6 +149,12 @@ func TestScanCacheReuse(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "logs"), 0o755)
 	os.WriteFile(filepath.Join(dir, "logs", "latest.log"), []byte("log"), 0o644)
 
+	// file "vecchi": quelli appena scritti sono nella finestra racy (D) e
+	// verrebbero giustamente ri-hashati
+	old := time.Now().Add(-time.Minute)
+	for _, f := range []string{"world/level.dat", "server.properties", "logs/latest.log"} {
+		os.Chtimes(filepath.Join(dir, f), old, old)
+	}
 	m := NewMatcher([]string{"logs/**"})
 	man, cache, err := Scan(dir, m, Cache{}, nil)
 	if err != nil {

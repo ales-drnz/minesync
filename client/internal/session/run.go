@@ -44,6 +44,11 @@ func (s *Session) run(ctx context.Context) error {
 // l'hub è andato avanti (divergenza) la sessione si ferma con il
 // DirtyLocalError (avvolto, errors.As funziona): decide l'utente.
 func (s *Session) syncAtStart(ctx context.Context) (syncx.PullPlan, error) {
+	// outbox di una sessione precedente finita male: non si riprende (vedi
+	// syncx/outbox.go), lo stato locale lo gestisce il controllo qui sotto
+	if err := s.eng.ResetOutbox(); err != nil {
+		s.warn(i18n.Sf("Pulizia dell'outbox non riuscita: %v", err))
+	}
 	s.setState(StatePulling)
 	plan, err := s.eng.Pull(ctx)
 	var dirty *syncx.DirtyLocalError
@@ -56,7 +61,7 @@ func (s *Session) syncAtStart(ctx context.Context) (syncx.PullPlan, error) {
 			return plan, i18n.Errorf("caricamento delle modifiche locali fallito: %w", perr)
 		}
 		if !res.NoChange {
-			s.recordPush(res, true)
+			s.recordPush(res, true, time.Now())
 			s.note(i18n.Sf("Modifiche locali caricate: generazione %d", res.Gen.N))
 		}
 		s.setState(StatePulling)
@@ -68,6 +73,9 @@ func (s *Session) syncAtStart(ctx context.Context) (syncx.PullPlan, error) {
 	if plan.Backup != "" {
 		s.warn(i18n.Sf("Modifiche locali scartate: ne trovi una copia in %s", plan.Backup))
 	}
+	// la cartella è identica all'hub da adesso
+	s.setHubSavedAt(time.Now())
+	s.emit(Event{Kind: EvUpload, HubSavedAt: s.HubSavedAt()})
 	return plan, nil
 }
 
@@ -87,11 +95,34 @@ func (s *Session) pullAndLaunch(ctx context.Context) (*loopState, error) {
 		return nil, i18n.Errorf("%w prima dell'avvio: il server non è stato avviato", ErrLockLost)
 	}
 
+	pick := s.pickLaunch
+	if s.launchOverride != nil {
+		pick = s.launchOverride
+	}
+	info, javaExe, err := pick()
+	if err != nil {
+		return fail(err)
+	}
+
+	s.setState(StateLaunching)
+	s.note(i18n.Sf("Avvio: %s", orDefault(info.LaunchNote, strings.Join(info.Launch, " "))))
+	sup, err := mc.Start(ctx, info, javaExe)
+	if err != nil {
+		return fail(i18n.Errorf("avvio fallito: %w", err))
+	}
+	s.mu.Lock()
+	s.sup = sup
+	s.mu.Unlock()
+	return newLoopState(s, info, javaExe, sup), nil
+}
+
+// pickLaunch decide come avviare il server: script o jar, e quale Java.
+func (s *Session) pickLaunch() (mc.ServerInfo, string, error) {
 	info := mc.Inspect(s.cfg.LocalPath)
 	if len(info.Launch) == 0 {
-		return fail(i18n.Errorf("non so come avviare il server in %s: non c'e' nessuno script di avvio "+
+		return info, "", i18n.Errorf("non so come avviare il server in %s: non c'e' nessuno script di avvio "+
 			"(run.sh, start.sh, ServerStart.sh…) ne' un jar avviabile (fabric-server-launch.jar, server.jar…)",
-			s.cfg.LocalPath))
+			s.cfg.LocalPath)
 	}
 	java, reqMajor := mc.PickJava(info, s.cfg.JavaPath)
 	javaExe := java.Path
@@ -104,8 +135,8 @@ func (s *Session) pullAndLaunch(ctx context.Context) (*loopState, error) {
 		s.warn(i18n.Sf("Nessun runtime Java trovato dal sistema: lascio decidere allo script del pack. Se non parte, installa Java %s.",
 			orDefault(itoaOr(reqMajor), "21")))
 	case !java.Found:
-		return fail(i18n.Errorf("java non trovato: installane uno (Minecraft %s vuole Java %s) o selezionalo dalle impostazioni dello spazio",
-			orDefault(info.MCVersion, i18n.S("moderno")), orDefault(itoaOr(reqMajor), "21")))
+		return info, "", i18n.Errorf("java non trovato: installane uno (Minecraft %s vuole Java %s) o selezionalo dalle impostazioni dello spazio",
+			orDefault(info.MCVersion, i18n.S("moderno")), orDefault(itoaOr(reqMajor), "21"))
 	case reqMajor > 0 && java.Major < reqMajor:
 		s.warn(i18n.Sf("Java %s è troppo vecchio: Minecraft %s richiede Java %d. Il server morirà con UnsupportedClassVersionError — installa Java %d.",
 			orDefault(java.Version, "?"), info.MCVersion, reqMajor, reqMajor))
@@ -121,17 +152,7 @@ func (s *Session) pullAndLaunch(ctx context.Context) (*loopState, error) {
 		javaLbl = i18n.S("scelto dallo script del pack")
 	}
 	s.emit(Event{Kind: EvLaunch, Java: javaLbl, Script: info.LaunchLabel(), Port: info.Port})
-
-	s.setState(StateLaunching)
-	s.note(i18n.Sf("Avvio: %s", orDefault(info.LaunchNote, strings.Join(info.Launch, " "))))
-	sup, err := mc.Start(ctx, info, javaExe)
-	if err != nil {
-		return fail(i18n.Errorf("avvio fallito: %w", err))
-	}
-	s.mu.Lock()
-	s.sup = sup
-	s.mu.Unlock()
-	return newLoopState(s, info, javaExe, sup), nil
+	return info, javaExe, nil
 }
 
 // loopState è lo stato del ciclo principale della sessione (server avviato).
@@ -144,13 +165,20 @@ type loopState struct {
 	autosave     *time.Ticker
 	nudge        *time.Ticker
 	flushTimeout *time.Timer
-	settle       *time.Timer // attesa IO asincrono dopo la conferma di salvataggio
 	killT        *time.Timer
 
 	waitingFlush bool
+	flushStart   time.Time // invio del save-all flush in corso
 	launched     bool
 	eulaBlocked  bool
 	restarts     int
+
+	// ciclo di autosave in corso (quiete, snapshot, upload): vedi autosave.go
+	cycle         *cycle
+	cycleMsg      chan cycleMsg
+	lastSaveStart time.Time
+	saveQueued    bool            // salvataggio manuale chiesto durante un upload
+	ctx           context.Context // contesto della sessione (i cicli ne derivano)
 
 	// Molti ServerStart.bat finiscono con `pause`: a server spento il .bat
 	// aspetta un tasto per sempre e il processo non esce mai. Durante lo
@@ -165,15 +193,16 @@ type loopState struct {
 func newLoopState(s *Session, info mc.ServerInfo, javaExe string, sup *mc.Supervisor) *loopState {
 	ls := &loopState{
 		s: s, info: info, javaExe: javaExe, sup: sup,
-		autosave:     time.NewTicker(s.cfg.AutosaveEvery),
-		nudge:        time.NewTicker(2 * time.Second),
-		flushTimeout: time.NewTimer(time.Hour),
-		settle:       time.NewTimer(time.Hour),
-		killT:        time.NewTimer(24 * time.Hour),
-		lastConsole:  time.Now(),
+		autosave:      time.NewTicker(s.cfg.AutosaveEvery),
+		nudge:         time.NewTicker(2 * time.Second),
+		flushTimeout:  time.NewTimer(time.Hour),
+		killT:         time.NewTimer(24 * time.Hour),
+		lastConsole:   time.Now(),
+		cycleMsg:      make(chan cycleMsg, 4),
+		lastSaveStart: time.Now(),
+		ctx:           context.Background(),
 	}
 	ls.flushTimeout.Stop()
-	ls.settle.Stop()
 	ls.killT.Stop()
 	return ls
 }
@@ -182,11 +211,11 @@ func (ls *loopState) stopTimers() {
 	ls.autosave.Stop()
 	ls.nudge.Stop()
 	ls.flushTimeout.Stop()
-	ls.settle.Stop()
 	ls.killT.Stop()
 }
 
 func (ls *loopState) loop(ctx context.Context) error {
+	ls.ctx = ctx
 	s := ls.s
 	for {
 		select {
@@ -205,22 +234,30 @@ func (ls *loopState) loop(ctx context.Context) error {
 				humanDur(time.Since(ls.lastConsole))))
 			ls.sup.Kill()
 		case <-ls.autosave.C:
-			if ls.beginSafeSave() {
+			// con un ciclo già in corso il tick si salta: mai due upload
+			// insieme, e mai un save-off subito dopo un save-on
+			if ls.cycle == nil && ls.beginSafeSave() {
 				s.note(i18n.S("Autosave in corso"))
 			}
 		case <-s.saveNow:
-			if ls.beginSafeSave() {
+			switch {
+			case ls.cycle != nil || ls.waitingFlush:
+				if !ls.saveQueued {
+					ls.saveQueued = true
+					s.note(i18n.S("Salvataggio già in corso: ne parte un altro appena finisce."))
+				}
+			case ls.beginSafeSave():
 				s.note(i18n.S("Salvataggio manuale in corso"))
 			}
-		case <-ls.settle.C:
-			ls.autosavePush(ctx)
+		case m := <-ls.cycleMsg:
+			ls.handleCycle(m)
 		case <-ls.flushTimeout.C:
 			if ls.waitingFlush {
 				ls.waitingFlush = false
 				if !ls.stopping() {
-					s.warn(i18n.Sf("Nessuna conferma di salvataggio entro %s: push comunque avviato.", humanDur(flushWait)))
+					s.warn(i18n.Sf("Nessuna conferma di salvataggio entro %s: snapshot comunque avviato.", humanDur(time.Since(ls.flushStart))))
 				}
-				ls.autosavePush(ctx)
+				ls.startCycle()
 			}
 		}
 	}
@@ -228,6 +265,7 @@ func (ls *loopState) loop(ctx context.Context) error {
 
 // handleCancel: contesto ucciso (Ctrl+C duro). Prova comunque uno stop rapido.
 func (ls *loopState) handleCancel(ctx context.Context) error {
+	ls.endCycle()
 	if ls.sup.Running() {
 		ls.sup.Stop()
 		select {
@@ -279,8 +317,7 @@ func (ls *loopState) handleLine(line string, ok bool) {
 
 // drainEvents applica i fatti del supervisore (avvio completato,
 // spegnimento, salvataggi, join/leave). Arrivano da una coda, non dalle
-// righe: quelle si perdono quando la UI è lenta o c'è un push in corso, i
-// fatti no.
+// righe: quelle si perdono quando la UI è lenta, i fatti no.
 func (ls *loopState) drainEvents() {
 	s := ls.s
 	for _, e := range ls.sup.DrainEvents() {
@@ -290,6 +327,9 @@ func (ls *loopState) drainEvents() {
 				ls.launched = true
 				s.setState(StateRunning)
 				s.note(i18n.Sf("Server avviato (porta %s)", orDefault(ls.info.Port, "25565")))
+				// un save-off lasciato da un client crashato non sopravvive al
+				// riavvio del server, ma un save-on in più non costa niente
+				ls.sup.Send("save-on")
 				s.mu.Lock()
 				s.ready = true // abilita il test della porta lato hub
 				if len(s.players) == 0 {
@@ -303,15 +343,18 @@ func (ls *loopState) drainEvents() {
 			ls.eulaBlocked = true
 		case mc.EvSaving:
 			// il salvataggio è in corso: sposta in avanti la scadenza
-			// invece di pushare un mondo ancora in scrittura
+			// invece di fotografare un mondo ancora in scrittura (ma non
+			// oltre il tetto)
 			if ls.waitingFlush {
-				ls.flushTimeout.Reset(flushWait)
+				if left := flushHardCap - time.Since(ls.flushStart); left > 0 {
+					ls.flushTimeout.Reset(min(flushWait, left))
+				}
 			}
 		case mc.EvSaved:
 			if ls.waitingFlush {
 				ls.waitingFlush = false
 				ls.flushTimeout.Stop()
-				ls.settle.Reset(3 * time.Second) // lascia atterrare l'IO asincrono
+				ls.startCycle()
 			}
 		case mc.EvJoin, mc.EvLeave:
 			s.mu.Lock()
@@ -344,6 +387,11 @@ func (ls *loopState) handleExit(ctx context.Context, exitErr error) (done bool, 
 	wasStopping := s.stopReq
 	s.mu.Unlock()
 	ls.drainEvents() // ultimi fatti prima di decidere (EULA, avvio riuscito…)
+	// un autosave in volo si annulla: il push che segue legge i file veri a
+	// server spento, e due push insieme sullo stesso engine non si fanno
+	ls.endCycle()
+	ls.waitingFlush = false
+	ls.flushTimeout.Stop()
 	if ls.eulaBlocked {
 		s.releaseLock()
 		return true, i18n.Errorf("il server si è fermato perché l'EULA di Minecraft non è accettata: " +
@@ -359,7 +407,7 @@ func (ls *loopState) handleExit(ctx context.Context, exitErr error) (done bool, 
 	}
 	// crash con riavvio automatico: salva subito lo stato sull'hub, poi
 	// rilancia lo script — l'host può anche non essere davanti al PC
-	if !wasStopping && !s.isLockLost() && s.cfg.MaxRestarts > 0 && ls.restarts < s.cfg.MaxRestarts {
+	if !wasStopping && !s.isLockLost() && !s.isSpaceGone() && s.cfg.MaxRestarts > 0 && ls.restarts < s.cfg.MaxRestarts {
 		ls.restarts++
 		s.warn(i18n.Sf("Server terminato in modo anomalo (%s): salvo lo stato e riavvio (tentativo %d/%d).",
 			describeExit(exitErr), ls.restarts, s.cfg.MaxRestarts))
@@ -372,7 +420,7 @@ func (ls *loopState) handleExit(ctx context.Context, exitErr error) (done bool, 
 		case perr != nil:
 			s.warn(i18n.Sf("Push post-crash non riuscito: %v", perr))
 		case !res.NoChange:
-			s.recordPush(res, true)
+			s.recordPush(res, true, time.Now())
 		}
 		s.setState(StateLaunching)
 		newSup, serr := mc.Start(ctx, ls.info, ls.javaExe)
@@ -387,9 +435,7 @@ func (ls *loopState) handleExit(ctx context.Context, exitErr error) (done bool, 
 		s.emptySince = time.Time{}
 		s.mu.Unlock()
 		s.emit(Event{Kind: EvPlayers, Players: []string{}})
-		ls.launched, ls.waitingFlush, ls.closing = false, false, false
-		ls.flushTimeout.Stop()
-		ls.settle.Stop()
+		ls.launched, ls.closing = false, false
 		ls.killT.Stop()
 		return false, nil
 	}
@@ -405,6 +451,10 @@ func (ls *loopState) finish(ctx context.Context, crashed bool, exitErr error) er
 	s.mu.Lock()
 	s.sup = nil
 	s.mu.Unlock()
+	if s.isSpaceGone() {
+		s.warn(i18n.S("Lo spazio non esiste più sull'hub: push finale saltato. Il mondo è rimasto solo su questo PC."))
+		return i18n.Errorf("%w: il server è stato fermato e il mondo è rimasto solo sul disco locale", ErrSpaceGone)
+	}
 	if s.isLockLost() {
 		s.warn(i18n.S("Lock perso: push finale saltato. Il mondo è rimasto solo su questo PC."))
 		return i18n.Errorf("%w: il server è stato fermato e il mondo è rimasto solo sul disco locale "+
@@ -424,9 +474,10 @@ func (ls *loopState) finish(ctx context.Context, crashed bool, exitErr error) er
 	case err != nil:
 		s.warn(i18n.Sf("Push finale non riuscito: %v. Il mondo resta sul disco locale; riprova con `minesync push`.", err))
 	case !res.NoChange:
-		s.recordPush(res, false)
+		s.recordPush(res, false, time.Now())
 		s.note(i18n.Sf("Push finale: generazione %d", res.Gen.N))
 	default:
+		s.setHubSavedAt(time.Now())
 		s.note(i18n.S("Nessuna modifica da salvare."))
 	}
 	s.releaseLock()
@@ -472,105 +523,36 @@ func (ls *loopState) handleNudge() {
 	}
 }
 
-// beginSafeSave avvia il ciclo di salvataggio sicuro: save-off + save-all
-// flush.
-//
-// Il `flush` c'è di proposito, e prima non c'era. Senza, `save-all` si limita
-// ad ACCODARE le scritture dei chunk e ritorna subito: il push partiva mentre
-// il mondo era ancora in scrittura, e ogni tanto catturava region a metà. Con
-// `flush` il server attende davvero la fine e fa fsync (è la sequenza che
-// usano tutti i tool di backup seri). Il prezzo è un blocco di qualche
-// secondo sui mondi grandi — accettabile una volta ogni cinque minuti, molto
-// meno costoso di un salvataggio incoerente. Il watchdog non è un problema:
-// il server si ferma solo per il tempo del salvataggio.
-//
-// Il push parte alla conferma + un breve settle per le scritture asincrone
-// che restano (playerdata e level.dat non si fermano mai a server acceso);
-// l'eventuale file cambiato in corsa viene rifiutato dall'hub via hash e il
-// push viene ritentato.
-func (ls *loopState) beginSafeSave() bool {
-	s := ls.s
-	s.mu.Lock()
-	busy := s.state == StateSaving || s.state == StatePushing || s.stopReq || s.lockLost
-	s.mu.Unlock()
-	if busy || ls.closing || !ls.launched || !ls.sup.Running() {
-		return false
-	}
-	s.setState(StateSaving)
-	ls.sup.Send("save-off")
-	ls.sup.Send("save-all flush")
-	ls.waitingFlush = true
-	ls.flushTimeout.Reset(flushWait)
-	return true
-}
-
-// autosavePush esegue il push col mondo congelato, poi riattiva i salvataggi.
-// Un tentativo extra assorbe le scritture asincrone dei modpack che sfuggono
-// al save-off (hash cambiato tra scansione e upload → l'hub rifiuta, e noi
-// ci riproviamo con una scansione fresca).
-//
-// Se nel frattempo è stato chiesto lo stop (o il server si sta già
-// spegnendo) non si pusha niente: il mondo sta cambiando sotto i piedi per
-// il salvataggio finale e il push finale arriva comunque. E niente save-on
-// a un server che si sta fermando.
-func (ls *loopState) autosavePush(ctx context.Context) {
-	s := ls.s
-	if ls.stopping() || s.isLockLost() {
-		s.setState(StateStopping)
-		return
-	}
-	s.setState(StatePushing)
-	msg := i18n.Sf("autosave di %s", s.cfg.Owner)
-	res, err := s.eng.Push(ctx, msg, false)
-	if err != nil && !api.IsLockLost(err) && !ls.stopping() {
-		select {
-		case <-time.After(2 * time.Second):
-			if !ls.stopping() {
-				res, err = s.eng.Push(ctx, msg, false)
-			}
-		case <-ctx.Done():
-		}
-	}
-	if ls.stopping() {
-		// stop arrivato durante il push: niente save-on, ci pensa lo stop
-		s.setState(StateStopping)
-		if err == nil && !res.NoChange {
-			s.recordPush(res, true)
-		}
-		return
-	}
-	ls.sup.Send("save-on") // SEMPRE, anche su errore
-	switch {
-	case err != nil && api.IsLockLost(err):
-		s.lockLostAlert(err)
-		return
-	case err != nil:
-		s.warn(i18n.Sf("Autosave non riuscito: %v", err))
-	case res.NoChange:
-		s.note(i18n.S("Autosave: nessuna modifica."))
-	default:
-		s.recordPush(res, true)
-		s.note(i18n.Sf("Autosave: generazione %d (%s)", res.Gen.N, humanBytes(res.Bytes)))
-	}
-	s.setState(StateRunning)
-}
-
-// recordPush registra un push riuscito: ultima generazione, evento per la
-// UI (saved=true) e avviso sui region file danneggiati.
-func (s *Session) recordPush(res syncx.PushResult, saved bool) {
+// recordPush registra un push riuscito: ultima generazione, istante dello
+// stato ora sull'hub, evento per la UI (saved=true) e avviso sui region file
+// danneggiati.
+func (s *Session) recordPush(res syncx.PushResult, saved bool, hubAt time.Time) {
 	s.mu.Lock()
 	s.lastGen = res.Gen.N
+	s.hubSavedAt = hubAt
 	s.mu.Unlock()
 	if saved {
-		s.emit(Event{Kind: EvSaved, Gen: res.Gen.N})
+		s.emit(Event{Kind: EvSaved, Gen: res.Gen.N, HubSavedAt: hubAt})
 	}
 	s.warnCorrupt(res)
+}
+
+func (s *Session) setHubSavedAt(t time.Time) {
+	s.mu.Lock()
+	s.hubSavedAt = t
+	s.mu.Unlock()
 }
 
 func (s *Session) isLockLost() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.lockLost
+}
+
+func (s *Session) isSpaceGone() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.spaceGone
 }
 
 // lockLostAlert: il lock non è più nostro. Avviso bloccante e stop pulito del
@@ -587,6 +569,23 @@ func (s *Session) lockLostAlert(cause error) {
 	s.emit(Event{Kind: EvNote, Warn: true, Alert: true, Note: i18n.Sf(
 		"LOCK PERSO (%v): qualcun altro ha preso il controllo dello spazio. Fermo il server: "+
 			"quello che fai da ora non potrebbe più essere salvato sull'hub. Il mondo resta su questo PC.", cause)})
+	s.RequestStop()
+}
+
+// spaceGoneAlert: lo spazio è stato cancellato dall'hub. Come il lock perso:
+// avviso bloccante, stop pulito, niente push (non c'è più dove farlo). Prima
+// l'heartbeat riceveva 404 per sempre e la sessione diceva soltanto "hub
+// irraggiungibile".
+func (s *Session) spaceGoneAlert() {
+	s.mu.Lock()
+	already := s.spaceGone || s.released
+	s.spaceGone = true
+	s.mu.Unlock()
+	if already {
+		return
+	}
+	s.emit(Event{Kind: EvNote, Warn: true, Alert: true, Note: i18n.S(
+		"SPAZIO CANCELLATO: questo server non esiste più sull'hub. Fermo il server; il mondo resta su questo PC.")})
 	s.RequestStop()
 }
 
@@ -618,6 +617,9 @@ func (s *Session) heartbeatLoop(ctx context.Context) {
 				s.updateReachable(resp.Reachable)
 			case api.IsConflict(err):
 				s.lockLostAlert(err)
+			case api.IsSpaceGone(err):
+				s.spaceGoneAlert()
+				return
 			default:
 				fails++
 				if fails == 2 {
@@ -631,7 +633,11 @@ func (s *Session) heartbeatLoop(ctx context.Context) {
 func (s *Session) releaseLock() {
 	s.mu.Lock()
 	s.released = true
+	gone := s.spaceGone
 	s.mu.Unlock()
+	if gone {
+		return // niente da rilasciare: lo spazio non c'è più
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := s.cfg.Client.LockRelease(ctx, s.cfg.SpaceID, s.cfg.LockSession, false); err != nil {

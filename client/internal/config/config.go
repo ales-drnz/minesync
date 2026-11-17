@@ -30,6 +30,12 @@ type Config struct {
 	// Lang: lingua dell'interfaccia ("it" | "en"); "" = automatica (sistema).
 	// La variabile d'ambiente MINESYNC_LANG ha la precedenza.
 	Lang string `json:"lang,omitempty"`
+	// UploadLimitKBps: banda massima (KB/s) degli autosave caricati in
+	// background mentre si gioca. 0 = automatica (70% della velocità di
+	// upload misurata), negativo = nessun limite. Il push finale e quelli
+	// manuali vanno sempre a piena velocità. La variabile d'ambiente
+	// MINESYNC_UPLOAD_LIMIT ha la precedenza.
+	UploadLimitKBps int `json:"uploadLimitKBps,omitempty"`
 }
 
 // Dir restituisce ~/.minesync (creandola).

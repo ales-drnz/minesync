@@ -39,12 +39,23 @@ type Hub struct {
 	FailPushBegin       bool            // push/begin risponde 503
 	FailBlobs           map[string]bool // GET di questi blob → 500
 	StallBlobs          bool            // GET dei blob: header e poi silenzio
+	UploadBps           int             // PUT dei blob: banda massima (0 = illimitata)
+	DiskFull            bool            // push/begin e PUT rispondono 507 disk_full
+	SpaceGone           bool            // heartbeat risponde 404 space_gone
+	NoDigest            bool            // hub vecchio: niente digest
+	PlainBeginOnly      bool            // hub vecchio: push/begin non accetta gzip
+	RejectBlobs         map[string]bool // PUT di questi blob → 400 (hash che non combacia)
+	BlobDelay           time.Duration   // attesa prima di accettare ogni PUT
 
 	// Osservazioni.
-	MissingHeader int // richieste senza X-MineSync
-	PushBegins    int // chiamate a push/begin
-	Commits       int // commit effettivi (generazioni create da push)
-	LastSession   string
+	MissingHeader    int // richieste senza X-MineSync
+	PushBegins       int // chiamate a push/begin
+	GzipBegins       int // push/begin arrivati compressi
+	BlobPuts         int // PUT di blob (anche falliti)
+	BlobPutHashes    map[string]int
+	LastParentDigest string
+	Commits          int // commit effettivi (generazioni create da push)
+	LastSession      string
 }
 
 type pendingPush struct {
@@ -55,11 +66,13 @@ type pendingPush struct {
 // New avvia il finto hub (chiuso da t.Cleanup a cura del chiamante: Close).
 func New() *Hub {
 	h := &Hub{
-		gens:      map[int]api.Manifest{0: {}},
-		blobs:     map[string][]byte{},
-		pushes:    map[string]pendingPush{},
-		committed: map[string]api.GenSummary{},
-		FailBlobs: map[string]bool{},
+		gens:          map[int]api.Manifest{0: {}},
+		blobs:         map[string][]byte{},
+		pushes:        map[string]pendingPush{},
+		committed:     map[string]api.GenSummary{},
+		FailBlobs:     map[string]bool{},
+		RejectBlobs:   map[string]bool{},
+		BlobPutHashes: map[string]int{},
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/spaces/{id}/manifest", h.manifest)
@@ -131,6 +144,62 @@ func (h *Hub) Commit(files map[string][]byte) int {
 	return h.head
 }
 
+// Digest è il digest di una generazione (come l'hub vero: SHA-256 del JSON
+// canonico del manifest).
+func (h *Hub) Digest(n int) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.digestLocked(n)
+}
+
+func (h *Hub) digestLocked(n int) string {
+	if h.NoDigest {
+		return ""
+	}
+	b, _ := json.Marshal(h.gens[n])
+	return Hash(b)
+}
+
+// ReplaceGen riscrive la generazione n con altri contenuti, stesso numero
+// (NAS ripristinato da un backup, spazio ricreato): il digest cambia.
+func (h *Hub) ReplaceGen(n int, files map[string][]byte) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	m := api.Manifest{}
+	for rel, b := range files {
+		hs := Hash(b)
+		h.blobs[hs] = b
+		m[rel] = api.FileMeta{Hash: hs, Size: int64(len(b))}
+	}
+	h.gens[n] = m
+}
+
+// Manifest restituisce il manifest della generazione n.
+func (h *Hub) Manifest(n int) api.Manifest {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := api.Manifest{}
+	for k, v := range h.gens[n] {
+		out[k] = v
+	}
+	return out
+}
+
+// DropBlob toglie un blob (come un GC sull'hub).
+func (h *Hub) DropBlob(hash string) {
+	h.mu.Lock()
+	delete(h.blobs, hash)
+	h.mu.Unlock()
+}
+
+// HasBlob dice se l'hub ha il blob.
+func (h *Hub) HasBlob(hash string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	_, ok := h.blobs[hash]
+	return ok
+}
+
 // SetRawManifest forza HEAD a un manifest arbitrario (anche malevolo).
 func (h *Hub) SetRawManifest(m api.Manifest) {
 	h.mu.Lock()
@@ -161,7 +230,7 @@ func (h *Hub) manifest(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 404, "generazione inesistente")
 		return
 	}
-	writeJSON(w, 200, api.ManifestResp{Gen: n, Head: h.head, Files: m})
+	writeJSON(w, 200, api.ManifestResp{Gen: n, Head: h.head, Files: m, Digest: h.digestLocked(n)})
 }
 
 func (h *Hub) getBlob(w http.ResponseWriter, r *http.Request) {
@@ -196,18 +265,46 @@ func (h *Hub) getBlob(w http.ResponseWriter, r *http.Request) {
 
 func (h *Hub) pushBegin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Parent  int          `json:"parent"`
-		Files   api.Manifest `json:"files"`
-		Session string       `json:"session"`
+		Parent       int          `json:"parent"`
+		ParentDigest string       `json:"parentDigest"`
+		Files        api.Manifest `json:"files"`
+		Session      string       `json:"session"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	h.mu.Lock()
+	plainOnly := h.PlainBeginOnly
+	h.mu.Unlock()
+	var body io.Reader = r.Body
+	gz := r.Header.Get("Content-Encoding") == "gzip"
+	if gz && !plainOnly {
+		zr, err := gzip.NewReader(r.Body)
+		if err != nil {
+			errJSON(w, 400, err.Error())
+			return
+		}
+		body = zr
+	}
+	if err := json.NewDecoder(body).Decode(&req); err != nil {
 		errJSON(w, 400, err.Error())
 		return
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.PushBegins++
+	if gz {
+		h.GzipBegins++
+	}
 	h.LastSession = req.Session
+	h.LastParentDigest = req.ParentDigest
+	if h.DiskFull {
+		writeJSON(w, 507, map[string]string{"error": "disco dell'hub pieno", "code": "disk_full"})
+		return
+	}
+	if req.ParentDigest != "" && !h.NoDigest {
+		if _, ok := h.gens[req.Parent]; !ok || h.digestLocked(req.Parent) != req.ParentDigest {
+			writeJSON(w, 409, map[string]string{"error": "base diversa", "code": "stale_base"})
+			return
+		}
+	}
 	if h.FailPushBegin {
 		errJSON(w, 503, "hub in manutenzione")
 		return
@@ -245,7 +342,26 @@ func required(m api.Manifest) []string {
 }
 
 func (h *Hub) putBlob(w http.ResponseWriter, r *http.Request) {
+	h.mu.Lock()
+	h.BlobPuts++
+	h.BlobPutHashes[r.PathValue("hash")]++
+	bps, full, reject, delay := h.UploadBps, h.DiskFull, h.RejectBlobs[r.PathValue("hash")], h.BlobDelay
+	h.mu.Unlock()
+	if full {
+		writeJSON(w, 507, map[string]string{"error": "disco dell'hub pieno", "code": "disk_full"})
+		return
+	}
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-r.Context().Done():
+			return
+		}
+	}
 	var body io.Reader = r.Body
+	if bps > 0 {
+		body = &throttled{r: r.Body, bps: bps, start: time.Now(), h: h}
+	}
 	if r.Header.Get("Content-Encoding") == "gzip" {
 		zr, err := gzip.NewReader(r.Body)
 		if err != nil {
@@ -259,7 +375,7 @@ func (h *Hub) putBlob(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 400, err.Error())
 		return
 	}
-	if Hash(b) != r.PathValue("hash") {
+	if reject || Hash(b) != r.PathValue("hash") {
 		errJSON(w, 400, "hash non combacia")
 		return
 	}
@@ -298,7 +414,7 @@ func (h *Hub) commit(w http.ResponseWriter, r *http.Request) {
 	h.head++
 	h.gens[h.head] = p.files
 	delete(h.pushes, pid)
-	g := api.GenSummary{N: h.head, Parent: p.parent, TS: time.Now()}
+	g := api.GenSummary{N: h.head, Parent: p.parent, TS: time.Now(), Digest: h.digestLocked(h.head)}
 	h.committed[pid] = g
 	h.Commits++
 	drop := h.DropCommitResponses > 0
@@ -345,6 +461,10 @@ func (h *Hub) heartbeat(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&req)
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if h.SpaceGone {
+		writeJSON(w, 404, map[string]string{"error": "spazio inesistente", "code": "space_gone"})
+		return
+	}
 	if req.Session == "" || req.Session != h.lockSess {
 		errJSON(w, 409, "conflitto: lock non tuo o già rilasciato")
 		return
@@ -361,4 +481,31 @@ func (h *Hub) release(w http.ResponseWriter, r *http.Request) {
 	}
 	h.lockSess = ""
 	w.WriteHeader(204)
+}
+
+// throttled legge al più bps byte al secondo (simula un uplink lento).
+type throttled struct {
+	r     io.Reader
+	bps   int
+	h     *Hub // se UploadBps torna a 0 il resto passa subito
+	start time.Time
+	n     int
+}
+
+func (t *throttled) Read(p []byte) (int, error) {
+	t.h.mu.Lock()
+	off := t.h.UploadBps == 0
+	t.h.mu.Unlock()
+	if off {
+		return t.r.Read(p)
+	}
+	if len(p) > 4096 {
+		p = p[:4096]
+	}
+	if ahead := time.Duration(float64(t.n)/float64(t.bps)*float64(time.Second)) - time.Since(t.start); ahead > 0 {
+		time.Sleep(ahead)
+	}
+	n, err := t.r.Read(p)
+	t.n += n
+	return n, err
 }

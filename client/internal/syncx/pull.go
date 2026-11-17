@@ -29,9 +29,17 @@ type PullPlan struct {
 	// Backup: cartella in cui sono finite le modifiche locali scartate
 	// (solo con Engine.DiscardLocal; "" se non c'era niente da salvare).
 	Backup string
+	// Digest della generazione Gen ("" da un hub precedente alla 3.2).
+	Digest string
+	// Invalid: file dell'hub saltati perché il nome non può esistere su
+	// questo sistema (es. "CON.txt" o "a?b" su Windows).
+	Invalid []string
 
 	dirty *DirtyLocalError // modifiche locali (anche quando DiscardLocal le scarta)
 	cache Cache            // cache della scansione da cui nasce il piano
+	// rescue: dopo un pull interrotto, i file locali che il pull toccherebbe
+	// e che non sono né la versione dell'hub né quella di partenza
+	rescue []string
 }
 
 // PlanPull calcola cosa scaricare/eliminare rispetto al manifest remoto.
@@ -39,6 +47,12 @@ type PullPlan struct {
 // Se la cartella locale ha modifiche mai pushate restituisce, insieme al
 // piano, un *DirtyLocalError (a meno che DiscardLocal sia attivo).
 func (e *Engine) PlanPull(ctx context.Context) (PullPlan, error) {
+	e.opMu.Lock()
+	defer e.opMu.Unlock()
+	return e.planPull(ctx)
+}
+
+func (e *Engine) planPull(ctx context.Context) (PullPlan, error) {
 	remote, err := e.remoteManifest(ctx, 0)
 	if err != nil {
 		return PullPlan{}, err
@@ -59,8 +73,15 @@ func (e *Engine) PlanPull(ctx context.Context) (PullPlan, error) {
 			off += c.Size
 		}
 	}
-	plan := PullPlan{Gen: remote.Gen, Remote: remote.Files, cache: cache}
+	plan := PullPlan{Gen: remote.Gen, Digest: remote.Digest, Remote: remote.Files, cache: cache}
 	for rel, rm := range remote.Files {
+		// un nome che su questo sistema non può esistere (l'hub di una
+		// versione vecchia l'ha accettato): si salta quel file, non l'intero
+		// pull
+		if invalidHere(rel) {
+			plan.Invalid = append(plan.Invalid, rel)
+			continue
+		}
 		// se un pattern di esclusione è stato aggiunto DOPO che il file era
 		// già sull'hub, il file resta nel manifest remoto e non comparirà mai
 		// in locale: senza questo salto verrebbe riscaricato (sovrascrivendo
@@ -89,6 +110,16 @@ func (e *Engine) PlanPull(ctx context.Context) (PullPlan, error) {
 	sort.Strings(plan.Download)
 	sort.Strings(plan.Chmod)
 	sort.Strings(plan.Delete)
+	sort.Strings(plan.Invalid)
+	if n := len(plan.Invalid); n > 0 {
+		e.warn(i18n.Sf("%d file dell'hub hanno un nome non valido su questo sistema e non vengono scaricati, es. %s: chi li ha creati deve rinominarli.",
+			n, plan.Invalid[0]))
+	}
+	if e.meta.Gen == genPulling {
+		if plan.rescue, err = e.rescueAfterInterruptedPull(ctx, plan, local); err != nil {
+			return plan, err
+		}
+	}
 
 	dirty, err := e.checkDirty(ctx, local, remote)
 	if err != nil {
@@ -150,7 +181,9 @@ func (e *EmptyRemoteError) Unwrap() error { return ErrEmptyRemote }
 
 // Pull scarica la generazione HEAD (checkout completo del manifest remoto).
 func (e *Engine) Pull(ctx context.Context) (PullPlan, error) {
-	plan, err := e.PlanPull(ctx)
+	e.opMu.Lock()
+	defer e.opMu.Unlock()
+	plan, err := e.planPull(ctx)
 	if err != nil {
 		return plan, err
 	}
@@ -163,25 +196,41 @@ func (e *Engine) Pull(ctx context.Context) (PullPlan, error) {
 
 	// DiscardLocal: prima di sovrascrivere o cancellare, copia di sicurezza
 	// delle modifiche locali che il pull sta per distruggere
+	// Dopo un pull interrotto: i file locali che non sono né la versione di
+	// partenza né quella dell'hub sono lavoro di qualcuno (fatto dopo
+	// l'interruzione): copia di sicurezza anche di quelli.
+	var save []string
 	if plan.dirty != nil {
-		dir, err := e.backupLocal(affectedByPull(plan))
+		save = affectedByPull(plan)
+	}
+	save = mergeSorted(save, plan.rescue)
+	if len(save) > 0 {
+		dir, err := e.backupLocal(save)
 		if err != nil {
 			return plan, err
 		}
 		plan.Backup = dir
 	}
 
+	// spazio: i file da scaricare devono starci, con un margine del 10%
+	if free := diskFreeFn(e.LocalPath); free >= 0 && plan.Bytes > 0 && free < plan.Bytes+plan.Bytes/10 {
+		return plan, &LocalDiskFullError{Need: plan.Bytes + plan.Bytes/10, Free: free, Dir: e.LocalPath}
+	}
+
 	// Da qui il locale smette di discendere dalla sua base: lo si scrive
 	// PRIMA di cancellare o scaricare qualunque cosa. Se il pull si
 	// interrompe, il push successivo saprà che la cartella è incompleta.
-	if err := e.saveMeta(plan.cache, genPulling); err != nil {
+	if e.meta.Gen != genPulling {
+		e.meta.PrevGen = e.meta.Gen // da dove si parte, per un eventuale pull interrotto
+	}
+	if err := e.saveMeta(plan.cache, genPulling, ""); err != nil {
 		return plan, i18n.Errorf("salvataggio dello stato locale: %w", err)
 	}
 
 	e.startTransfer("pull", len(plan.Download), plan.Bytes)
 	e.applyDeletes(plan)
 
-	err = runPool(ctx, plan.Download, func(ctx context.Context, rel string) error {
+	err = runPool(ctx, workers, plan.Download, func(ctx context.Context, rel string) error {
 		if err := e.downloadFile(ctx, rel, plan.Remote[rel]); err != nil {
 			return fmt.Errorf("%s: %w", rel, err)
 		}
@@ -194,7 +243,7 @@ func (e *Engine) Pull(ctx context.Context) (PullPlan, error) {
 	// permessi da riallineare senza riscaricare
 	for _, rel := range plan.Chmod {
 		p := filepath.Join(e.LocalPath, filepath.FromSlash(rel))
-		if err := os.Chmod(p, fileMode(plan.Remote[rel].Exec)); err != nil {
+		if err := e.chmod(p, fileMode(plan.Remote[rel].Exec)); err != nil {
 			return plan, i18n.Errorf("permessi di %s: %w", rel, err)
 		}
 	}
@@ -205,7 +254,7 @@ func (e *Engine) Pull(ctx context.Context) (PullPlan, error) {
 	if err != nil {
 		return plan, i18n.Errorf("scansione dopo il pull: %w", err)
 	}
-	if err := e.saveMeta(cache, plan.Gen); err != nil {
+	if err := e.saveMeta(cache, plan.Gen, plan.Digest); err != nil {
 		return plan, i18n.Errorf("salvataggio dello stato locale: %w", err)
 	}
 	// i blob pre-scaricati sono stati materializzati: la cache ha fatto
@@ -355,7 +404,7 @@ func (e *Engine) downloadFile(ctx context.Context, rel string, meta api.FileMeta
 // dalle tre sorgenti; verifica finale sull'hash dell'intero file.
 func (e *Engine) tryDownloadChunked(ctx context.Context, meta api.FileMeta, dst string) error {
 	var written int64
-	err := writeVerified(dst, meta.Hash, fileMode(meta.Exec), func(w io.Writer) error {
+	err := e.writeVerified(dst, meta.Hash, fileMode(meta.Exec), func(w io.Writer) error {
 		for _, c := range meta.Chunks {
 			data, err := e.fetchChunk(ctx, c)
 			if err != nil {
@@ -391,7 +440,7 @@ func (e *Engine) tryDownload(ctx context.Context, meta api.FileMeta, dst string)
 	}
 	defer body.Close()
 	var copied int64
-	err := writeVerified(dst, meta.Hash, fileMode(meta.Exec), func(w io.Writer) error {
+	err := e.writeVerified(dst, meta.Hash, fileMode(meta.Exec), func(w io.Writer) error {
 		buf := make([]byte, bufSize)
 		for {
 			n, rerr := body.Read(buf)
