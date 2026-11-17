@@ -20,17 +20,24 @@ import (
 // fakeTG finge le API di Telegram e raccoglie i messaggi inviati.
 type fakeTG struct {
 	*httptest.Server
-	msgs     chan sent
-	cmds     chan tgCmd // comandi da consegnare al prossimo getUpdates
-	polls    atomic.Int64
-	sendCode atomic.Int64 // status di sendMessage (0 = 200)
+	msgs      chan sent
+	cmds      chan tgCmd // comandi da consegnare al prossimo getUpdates
+	polls     atomic.Int64
+	sendCode  atomic.Int64 // status di sendMessage (0 = 200)
+	deadTopic atomic.Int64 // topic eliminato: sendMessage lì risponde "message thread not found"
 }
 
-type sent struct{ chat, text string }
+// sent: un messaggio ricevuto; thread = message_thread_id (0 = assente).
+type sent struct {
+	chat, text string
+	thread     int64
+}
 
+// tgCmd: un comando nel gruppo; thread > 0 = scritto in quel topic.
 type tgCmd struct {
-	chat int64
-	text string
+	chat   int64
+	text   string
+	thread int64
 }
 
 func newFakeTG(t *testing.T) *fakeTG {
@@ -42,8 +49,12 @@ func newFakeTG(t *testing.T) *fakeTG {
 			f.polls.Add(1)
 			select {
 			case c := <-f.cmds:
-				fmt.Fprintf(w, `{"ok":true,"result":[{"update_id":%d,"message":{"text":%q,"chat":{"id":%d}}}]}`,
-					upd.Add(1), c.text, c.chat)
+				topic := ""
+				if c.thread > 0 {
+					topic = fmt.Sprintf(`,"message_thread_id":%d,"is_topic_message":true`, c.thread)
+				}
+				fmt.Fprintf(w, `{"ok":true,"result":[{"update_id":%d,"message":{"text":%q,"chat":{"id":%d}%s}}]}`,
+					upd.Add(1), c.text, c.chat, topic)
 			default:
 				w.Write([]byte(`{"ok":true,"result":[]}`)) // nessun comando
 			}
@@ -58,11 +69,24 @@ func newFakeTG(t *testing.T) *fakeTG {
 		var req struct {
 			ChatID string `json:"chat_id"`
 			Text   string `json:"text"`
+			Thread *int64 `json:"message_thread_id"`
 		}
 		if err := json.Unmarshal(body, &req); err != nil {
 			t.Errorf("body non JSON: %v", err)
 		}
-		f.msgs <- sent{req.ChatID, req.Text}
+		var th int64
+		if req.Thread != nil {
+			th = *req.Thread
+			if th <= 1 {
+				t.Errorf("message_thread_id %d: Telegram lo rifiuta (il Generale va senza)", th)
+			}
+		}
+		if d := f.deadTopic.Load(); d != 0 && th == d {
+			w.WriteHeader(400)
+			w.Write([]byte(`{"ok":false,"error_code":400,"description":"Bad Request: message thread not found"}`))
+			return
+		}
+		f.msgs <- sent{req.ChatID, req.Text, th}
 		w.Write([]byte(`{"ok":true}`))
 	}))
 	t.Cleanup(f.Close)
@@ -78,6 +102,12 @@ func (f *fakeTG) want(t *testing.T, frags ...string) {
 // wantIn attende un messaggio nella chat indicata.
 func (f *fakeTG) wantIn(t *testing.T, chat string, frags ...string) {
 	t.Helper()
+	f.next(t, chat, frags...)
+}
+
+// next attende un messaggio nella chat indicata e lo restituisce.
+func (f *fakeTG) next(t *testing.T, chat string, frags ...string) sent {
+	t.Helper()
 	select {
 	case m := <-f.msgs:
 		msg := m.text
@@ -89,8 +119,18 @@ func (f *fakeTG) wantIn(t *testing.T, chat string, frags ...string) {
 				t.Errorf("messaggio %q: manca %q", msg, s)
 			}
 		}
+		return m
 	case <-time.After(3 * time.Second):
 		t.Fatalf("nessun messaggio (attesi %v)", frags)
+	}
+	return sent{}
+}
+
+// wantTopic attende un messaggio nel topic thread (0 = chat principale).
+func (f *fakeTG) wantTopic(t *testing.T, thread int64, frags ...string) {
+	t.Helper()
+	if m := f.next(t, "-100999", frags...); m.thread != thread {
+		t.Errorf("message_thread_id = %d, atteso %d (%q)", m.thread, thread, m.text)
 	}
 }
 
@@ -239,7 +279,7 @@ func TestStatusMsg(t *testing.T) {
 	if _, err := st.HeartbeatLock("miomondo", lk.Session, []string{"alex", "bob"}, false); err != nil {
 		t.Fatal(err)
 	}
-	msg := tg.statusMsg()
+	msg := tg.statusMsg(nil)
 	for _, frag := range []string{"📊", "🟢", "miomondo", "steve", "alex, bob",
 		"zerotier.miomondo.internal", "⚪", "SkyFactory", "chiuso"} {
 		if !strings.Contains(msg, frag) {

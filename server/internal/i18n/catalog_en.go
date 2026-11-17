@@ -212,6 +212,12 @@ var catalogEN = map[string]string{
 
 	"✅ <b>MineSync</b>: messaggio di prova. Il bot è configurato correttamente.": "✅ <b>MineSync</b>: test message. The bot is configured correctly.",
 
+	"✅ <b>MineSync</b>: messaggio di prova per <b>%s</b>. Gli annunci di questo server arriveranno qui.": "✅ <b>MineSync</b>: test message for <b>%s</b>. This server's announcements will arrive here.",
+
+	"topic di %s non trovato su Telegram (eliminato?): i messaggi vanno nel topic Generale": "topic of %s not found on Telegram (deleted?): messages go to the General topic",
+
+	"telegram: %v": "telegram: %v",
+
 	// --- impostazioni (settings.json, pagina Impostazioni) ---
 	"%s non valido: %v": "%s is invalid: %v",
 
@@ -224,6 +230,12 @@ var catalogEN = map[string]string{
 	"%w: per attivare il bot servono token e chat id": "%w: enabling the bot requires a token and a chat id",
 
 	"%w: per il messaggio di prova servono token e chat id": "%w: the test message needs a token and a chat id",
+
+	"%w: topic di %s non valido (serve un numero maggiore di 1)": "%w: invalid topic for %s (it must be a number greater than 1)",
+
+	"%w: topic di %s non valido: incolla il link del topic (https://t.me/c/…/…) oppure il suo numero": "%w: invalid topic for %s: paste the topic link (https://t.me/c/…/…) or its number",
+
+	"%w: il link del topic di %s è di un'altra chat (%s), mentre il chat id configurato è %s: copia il link da questo gruppo o correggi il chat id": "%w: the topic link for %s belongs to another chat (%s), while the configured chat id is %s: copy the link from this group or fix the chat id",
 
 	"%s ha modificato le impostazioni di Telegram": "%s changed the Telegram settings",
 

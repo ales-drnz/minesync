@@ -507,6 +507,25 @@ a.btnlike:hover { filter: brightness(1.12); }
 .setcard .actions { margin-top: 20px; }
 .setcard .unsaved { font-size: 12px; color: var(--amber); font-weight: 700; }
 
+/* topic per server (gruppi forum): nome a sinistra, campo e prova a destra;
+   sotto i ~420px il campo va a capo sotto il nome */
+.setcard .topics > .fhint { margin-bottom: 6px; }
+.setcard .topics details.help { margin-bottom: 6px; }
+.topics .trow {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  padding: 8px 0; border-top: 1px solid var(--line);
+}
+.topics details + .trow { margin-top: 4px; }
+.topics .tname {
+  display: flex; align-items: center; gap: 8px; flex: 1 1 140px; min-width: 0;
+  text-transform: none; letter-spacing: 0; font-size: 13.5px; color: var(--text); cursor: pointer;
+}
+.topics .tname > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topics .tname .space-ico { width: 24px; height: 24px; }
+.topics .tin { display: flex; gap: 8px; align-items: center; flex: 999 1 250px; min-width: 0; }
+.topics .tin input { flex: 1 1 auto; min-width: 0; }
+.topics .tin button { flex-shrink: 0; }
+
 /* checkbox con titolo e descrizione su una riga */
 label.check {
   display: flex; gap: 10px; align-items: flex-start; cursor: pointer;

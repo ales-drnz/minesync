@@ -217,6 +217,17 @@ const I18N = {
     "set.tg.n.alertsD": "un server aperto ha smesso di salvare sull'hub",
     "set.tg.n.status": "Comando /status",
     "set.tg.n.statusD": "il bot risponde nel gruppo con lo stato dei server",
+    "set.tg.topics": "Topic per server",
+    "set.tg.topicsD": "Gruppo con i topic attivi? Ogni server può avere il suo: aperture, chiusure e avvisi vanno lì, e /status scritto in un topic risponde solo per quel server. Senza topic, i messaggi vanno nel canale generale.",
+    "set.tg.topicPh": "link o numero del topic — vuoto = canale generale",
+    "set.tg.topicTest": "Prova il topic di {name}",
+    "set.tg.topicSent": "Messaggio di prova inviato nel topic di {name}",
+    "set.tg.noSpaces": "Nessun server: crea un server per assegnargli un topic.",
+    "set.tg.topicHelp": "Come copio il link di un topic?",
+    "set.tg.topicHelp1": "Nelle impostazioni del gruppo attiva i Topic (serve un supergruppo) e crea un topic per ogni server.",
+    "set.tg.topicHelp2": "Tieni premuto (o clic destro) sul topic nella lista e scegli «Copia link».",
+    "set.tg.topicHelp3": "Incollalo qui: va bene {ex} (o t.me/nomegruppo/5 per i gruppi pubblici). Basta anche il numero finale.",
+    "set.tg.topicHelp4": "Il bot deve poter scrivere nei topic. Il topic «Generale» non ha numero: lascia il campo vuoto.",
     "set.save": "Salva",
     "set.saved": "Impostazioni salvate",
     "set.test": "Invia messaggio di prova",
@@ -428,6 +439,17 @@ const I18N = {
     "set.tg.n.alertsD": "an open server stopped saving to the hub",
     "set.tg.n.status": "/status command",
     "set.tg.n.statusD": "the bot replies in the group with the state of every server",
+    "set.tg.topics": "Topics per server",
+    "set.tg.topicsD": "Does your group use topics? Each server can have its own: opens, closes and warnings go there, and /status sent in a topic answers for that server only. Without a topic, messages go to the General channel.",
+    "set.tg.topicPh": "topic link or number — empty = General channel",
+    "set.tg.topicTest": "Test the topic of {name}",
+    "set.tg.topicSent": "Test message sent to the topic of {name}",
+    "set.tg.noSpaces": "No servers yet: create one to give it a topic.",
+    "set.tg.topicHelp": "How do I copy a topic link?",
+    "set.tg.topicHelp1": "In the group settings turn on Topics (it must be a supergroup) and create one topic per server.",
+    "set.tg.topicHelp2": "Long-press (or right-click) the topic in the list and choose “Copy link”.",
+    "set.tg.topicHelp3": "Paste it here: {ex} works (or t.me/groupname/5 for public groups). The final number alone is fine too.",
+    "set.tg.topicHelp4": "The bot must be allowed to post in topics. The “General” topic has no number: leave the field empty.",
     "set.save": "Save",
     "set.saved": "Settings saved",
     "set.test": "Send test message",
@@ -921,10 +943,10 @@ async function viewDl() {
    Il token del bot non arriva mai nella pagina: l'hub dice solo se è
    impostato e le ultime 4 cifre. Campo token vuoto = token invariato. */
 async function viewSettings() {
-  const data = await api("GET", "/settings");
+  const [data, spaces] = await Promise.all([api("GET", "/settings"), api("GET", "/spaces")]);
   main.replaceChildren(h("div", { class: "settings" },
     h("h2", {}, icon("settings", 15), t("set.title")),
-    telegramCard(data.telegram)));
+    telegramCard(data.telegram, spaces)));
 }
 
 const NOTIFY_KEYS = ["open", "close", "alerts", "status"];
@@ -949,7 +971,10 @@ function field(label, id, ...children) {
   return h("div", { class: "field" }, h("label", { for: id }, label), ...children);
 }
 
-function telegramCard(tg) {
+// valore del topic come lo mostra il modulo: il numero salvato o vuoto (Generale)
+const topicVal = (tg, id) => (tg.topics?.[id] ? String(tg.topics[id]) : "");
+
+function telegramCard(tg, spaces) {
   const enabled = h("input", { type: "checkbox", id: "tg-enabled", role: "switch" });
   enabled.checked = !!tg.enabled;
   const token = h("input", {
@@ -972,14 +997,33 @@ function telegramCard(tg) {
       h("span", {}, h("b", {}, t("set.tg.n." + k)), h("span", { class: "muted" }, t("set.tg.n." + k + "D"))));
   });
 
+  // un topic per server (gruppi forum): link o numero, vuoto = Generale
+  const topics = {};
+  const topicRows = spaces.map((sp) => {
+    const inp = h("input", {
+      id: "tg-topic-" + sp.id, autocomplete: "off", spellcheck: "false", inputmode: "url",
+      placeholder: t("set.tg.topicPh"), "aria-label": t("set.tg.topics") + " — " + sp.name,
+    });
+    inp.value = topicVal(tg, sp.id);
+    topics[sp.id] = inp;
+    const name = t("set.tg.topicTest", { name: sp.name });
+    const btn = h("button", { class: "ghost icon", type: "button", title: name, "aria-label": name }, icon("send", 14));
+    btn.addEventListener("click", () => sendTest(btn, sp));
+    return h("div", { class: "trow" },
+      h("label", { class: "tname", for: "tg-topic-" + sp.id }, spaceIcon(sp.id, 22), h("span", { title: sp.name }, sp.name)),
+      h("div", { class: "tin" }, inp, btn));
+  });
+
   // Salva si accende solo se qualcosa è cambiato rispetto a quanto salvato
   const formState = () => ({
     enabled: enabled.checked, chatId: chat.value.trim(), lang: lang.value,
     notify: Object.fromEntries(NOTIFY_KEYS.map((k) => [k, flags[k].checked])),
+    topics: Object.fromEntries(spaces.map((sp) => [sp.id, topics[sp.id].value.trim()])),
   });
   const initial = JSON.stringify({
     enabled: !!tg.enabled, chatId: tg.chatId || "", lang: tg.lang || "",
     notify: Object.fromEntries(NOTIFY_KEYS.map((k) => [k, !!tg.notify?.[k]])),
+    topics: Object.fromEntries(spaces.map((sp) => [sp.id, topicVal(tg, sp.id)])),
   });
   const save = h("button", { disabled: "" }, t("set.save"));
   const unsaved = h("span", { class: "unsaved", hidden: "" }, t("set.st.unsaved"));
@@ -988,13 +1032,13 @@ function telegramCard(tg) {
     save.disabled = !dirty;
     unsaved.hidden = !dirty;
   };
-  for (const el of [enabled, token, chat, lang, ...Object.values(flags)]) {
+  for (const el of [enabled, token, chat, lang, ...Object.values(flags), ...Object.values(topics)]) {
     el.addEventListener("input", refresh);
     el.addEventListener("change", refresh);
   }
 
   let card = null;
-  const redraw = (next) => { const c = telegramCard(next); card.replaceWith(c); card = c; };
+  const redraw = (next) => { const c = telegramCard(next, spaces); card.replaceWith(c); card = c; };
   save.addEventListener("click", async () => {
     const body = formState();
     if (token.value.trim()) body.token = token.value.trim();
@@ -1007,17 +1051,18 @@ function telegramCard(tg) {
   });
 
   let statusBox = tgStatus(tg);
-  // prova con quello che c'è nel modulo, anche se non salvato (l'hub non lo salva)
-  const testBtn = h("button", { class: "ghost" }, icon("send", 14), t("set.test"));
-  testBtn.addEventListener("click", async () => {
+  // prova con quello che c'è nel modulo, anche se non salvato (l'hub non lo
+  // salva); con sp, nel topic di quel server
+  const sendTest = async (btn, sp) => {
     const body = { chatId: chat.value.trim(), lang: lang.value };
     if (token.value.trim()) body.token = token.value.trim();
-    testBtn.disabled = true;
+    if (sp) Object.assign(body, { spaceId: sp.id, topic: topics[sp.id].value.trim() });
+    btn.disabled = true;
     try {
       await api("POST", "/settings/telegram/test", body);
-      toast(t("set.testSent"));
+      toast(sp ? t("set.tg.topicSent", { name: sp.name }) : t("set.testSent"));
     } catch (e) { toast(e.message, true); }
-    testBtn.disabled = false;
+    btn.disabled = false;
     // l'esito aggiorna lo stato del bot (ultimo invio / ultimo errore)
     try {
       const d = await api("GET", "/settings");
@@ -1025,7 +1070,9 @@ function telegramCard(tg) {
       statusBox.replaceWith(s);
       statusBox = s;
     } catch { /* lo stato resta quello di prima */ }
-  });
+  };
+  const testBtn = h("button", { class: "ghost" }, icon("send", 14), t("set.test"));
+  testBtn.addEventListener("click", () => sendTest(testBtn, null));
 
   const clearBtn = !tg.tokenSet ? null : h("button", { class: "ghost", type: "button" }, icon("trash", 13), t("set.tg.clearToken"));
   clearBtn?.addEventListener("click", async () => {
@@ -1046,6 +1093,13 @@ function telegramCard(tg) {
       h("li", {}, t("set.tg.help2")),
       h("li", {}, tx("set.tg.help3", { url: h("code", {}, "https://api.telegram.org/bot<TOKEN>/getUpdates") })),
       h("li", {}, t("set.tg.help4"))));
+  const topicHelp = h("details", { class: "help" },
+    h("summary", {}, t("set.tg.topicHelp")),
+    h("ol", {},
+      h("li", {}, t("set.tg.topicHelp1")),
+      h("li", {}, t("set.tg.topicHelp2")),
+      h("li", {}, tx("set.tg.topicHelp3", { ex: h("code", {}, "https://t.me/c/1234567890/5") })),
+      h("li", {}, t("set.tg.topicHelp4"))));
 
   card = h("div", { class: "card setcard" },
     h("div", { class: "cardhead" }, icon("send", 15), t("set.tg.title")),
@@ -1057,6 +1111,10 @@ function telegramCard(tg) {
     field(t("set.tg.chat"), "tg-chat", chat, help),
     field(t("set.tg.lang"), "tg-lang", lang),
     h("fieldset", {}, h("legend", {}, t("set.tg.notify")), notifyRows),
+    h("fieldset", { class: "topics" }, h("legend", {}, t("set.tg.topics")),
+      h("p", { class: "fhint" }, t("set.tg.topicsD")),
+      topicHelp,
+      topicRows.length ? topicRows : h("p", { class: "muted fhint" }, t("set.tg.noSpaces"))),
     h("div", { class: "row actions" }, save, testBtn, unsaved));
   return card;
 }

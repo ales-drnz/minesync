@@ -128,7 +128,7 @@ func TestStatusOnOff(t *testing.T) {
 // Un annuncio accodato prima dello spegnimento non parte.
 func TestCodaScartataAlloSpegnimento(t *testing.T) {
 	_, _, tg, f := setup(t)
-	if !tg.queue(kindOpen, "vecchio") {
+	if !tg.queue(kindOpen, "miomondo", "vecchio") {
 		t.Fatal("non accodato")
 	}
 	off := fullCfg()
@@ -136,7 +136,7 @@ func TestCodaScartataAlloSpegnimento(t *testing.T) {
 	tg.Apply(off)
 	go tg.sender(t.Context())
 	f.wantSilence(t)
-	if tg.queue(kindOpen, "nuovo") {
+	if tg.queue(kindOpen, "miomondo", "nuovo") {
 		t.Fatal("accodato a bot spento")
 	}
 }
@@ -146,7 +146,7 @@ func TestCodaScartataAlloSpegnimento(t *testing.T) {
 func TestProvaErrori(t *testing.T) {
 	_, _, tg, f := setup(t)
 	f.sendCode.Store(400)
-	err := tg.Test(t.Context(), fullCfg())
+	err := tg.Test(t.Context(), fullCfg(), "")
 	if err == nil || !strings.Contains(err.Error(), "chat not found") {
 		t.Fatalf("errore: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestProvaErrori(t *testing.T) {
 		t.Fatalf("stato: %+v", st)
 	}
 	f.sendCode.Store(0)
-	if err := tg.Test(t.Context(), fullCfg()); err != nil {
+	if err := tg.Test(t.Context(), fullCfg(), ""); err != nil {
 		t.Fatal(err)
 	}
 	f.want(t, "messaggio di prova")
@@ -168,7 +168,7 @@ func TestProvaErrori(t *testing.T) {
 	secret := "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsawQ"
 	c := fullCfg()
 	c.Token = secret
-	err = tg.Test(t.Context(), c)
+	err = tg.Test(t.Context(), c, "")
 	if err == nil || strings.Contains(err.Error(), secret) {
 		t.Fatalf("token nell'errore: %v", err)
 	}

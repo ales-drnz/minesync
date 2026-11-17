@@ -7,6 +7,7 @@
 - **Settings** page in the web UI (admins only). Its first section configures the Telegram bot: on/off, token, chat id, message language, and which messages to send (server opened, server closed, warnings, replies to `/status`), with a test message and the bot's last error.
 - `GET /api/v1/settings`, `PUT /api/v1/settings/telegram`, `POST /api/v1/settings/telegram/test`. The token is never returned by the API.
 - Settings are stored in `/data/settings.json` (atomic write, mode `0600`). Changing them logs an event in the activity feed.
+- Telegram forum groups: one topic per server. Each server's open/close/warning messages go to its topic, and `/status` in a server's topic answers for that server only. Topics are set in Settings by pasting the topic link (or its number), with a per-server test button; a deleted topic falls back to the main chat and shows up as the bot's last error.
 
 ### Changed
 

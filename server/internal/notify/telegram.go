@@ -20,6 +20,7 @@ import (
 	"html"
 	"io"
 	"log"
+	"maps"
 	"net"
 	"net/http"
 	neturl "net/url"
@@ -54,6 +55,9 @@ type Config struct {
 	Close   bool      // annuncia le chiusure (anche lock scaduti)
 	Alerts  bool      // avvisi del watchdog dei salvataggi
 	Status  bool      // risponde a /status nella chat
+	// Topics: id dello spazio → message_thread_id del suo topic nei gruppi
+	// forum (solo valori > 1). Spazi assenti: chat principale (Generale).
+	Topics map[string]int64
 }
 
 // FromSettings converte la sezione telegram di settings.json.
@@ -62,7 +66,16 @@ func FromSettings(tg settings.Telegram) Config {
 	return Config{
 		Enabled: tg.Enabled, Token: tg.Token, ChatID: tg.ChatID, Lang: l,
 		Open: tg.Notify.Open, Close: tg.Notify.Close, Alerts: tg.Notify.Alerts, Status: tg.Notify.Status,
+		Topics: maps.Clone(tg.Topics),
 	}
+}
+
+// topic è il thread in cui vanno i messaggi dello spazio (0 = chat principale).
+func (c Config) topic(space string) int64 {
+	if th := c.Topics[space]; th > 1 {
+		return th
+	}
+	return 0
 }
 
 // active: il bot può davvero mandare messaggi.
@@ -100,9 +113,12 @@ type Status struct {
 }
 
 // outMsg è un annuncio in coda, con destinatario fissato al momento
-// dell'accodamento.
+// dell'accodamento. thread > 0: il topic del gruppo forum; space: il server
+// di cui parla (per dire quale topic manca se è stato eliminato).
 type outMsg struct {
 	token, chatID, text string
+	thread              int64
+	space               string
 }
 
 // Telegram inoltra gli eventi di apertura e chiusura a una chat, risponde a
@@ -150,7 +166,8 @@ func (t *Telegram) Apply(c Config) {
 	t.mu.Lock()
 	old := t.cfg
 	t.cfg = c
-	if old.Token != c.Token || old.ChatID != c.ChatID || old.active() != c.active() {
+	if old.Token != c.Token || old.ChatID != c.ChatID || old.active() != c.active() ||
+		!maps.Equal(old.Topics, c.Topics) {
 		t.lastErr, t.lastErrAt, t.pollErr = nil, time.Time{}, false
 	}
 	t.mu.Unlock()
@@ -273,7 +290,7 @@ func (t *Telegram) handle(e events.Event) {
 		}
 		t.open[e.Space] = session{owner: lk.Owner, since: lk.Since, lastPush: time.Now()}
 		if t.config().wants(kindOpen) {
-			t.queue(kindOpen, t.openMsg(e.Space, lk))
+			t.queue(kindOpen, e.Space, t.openMsg(e.Space, lk))
 		}
 	case "push":
 		if s, was := t.open[e.Space]; was {
@@ -287,7 +304,7 @@ func (t *Telegram) handle(e events.Event) {
 			return
 		}
 		delete(t.open, e.Space)
-		t.queue(kindClose, t.closeMsg(e.Space, s, ""))
+		t.queue(kindClose, e.Space, t.closeMsg(e.Space, s, ""))
 	}
 }
 
@@ -306,7 +323,7 @@ func (t *Telegram) sweepPushWatchdog() {
 		}
 		// a avvisi spenti la sessione non si marca: se li si riaccende,
 		// l'avviso arriva
-		if t.queue(kindAlert, t.trf(
+		if t.queue(kindAlert, id, t.trf(
 			"⚠️ <b>%s</b> è aperto ma non salva sull'hub da %s\n👤 host <b>%s</b>: i salvataggi automatici non arrivano, lo stato recente non è protetto",
 			esc(t.name(id)), dur(now.Sub(s.lastPush)), esc(s.owner))) {
 			s.pushWarned = true
@@ -326,10 +343,10 @@ func (t *Telegram) sweepStale() {
 		switch {
 		case lk == nil: // rilasciato senza che passassimo dall'evento
 			delete(t.open, id)
-			t.queue(kindClose, t.closeMsg(id, s, ""))
+			t.queue(kindClose, id, t.closeMsg(id, s, ""))
 		case lk.Stale(now):
 			delete(t.open, id)
-			t.queue(kindClose, t.closeMsg(id, s, t.trf("il client di %s non risponde più", esc(s.owner))))
+			t.queue(kindClose, id, t.closeMsg(id, s, t.trf("il client di %s non risponde più", esc(s.owner))))
 		}
 	}
 }
@@ -343,6 +360,10 @@ type tgUpdate struct {
 		Chat struct {
 			ID int64 `json:"id"`
 		} `json:"chat"`
+		// nei gruppi forum: il topic del messaggio. Nei gruppi normali
+		// message_thread_id c'è anche nelle risposte, ma is_topic_message no.
+		ThreadID int64 `json:"message_thread_id"`
+		IsTopic  bool  `json:"is_topic_message"`
 	} `json:"message"`
 }
 
@@ -381,7 +402,13 @@ func (t *Telegram) poller(ctx context.Context, token string) {
 			if !sameChat(u.Message.Chat.ID, c.ChatID) {
 				continue
 			}
-			t.queue(kindStatus, t.statusMsg())
+			// si risponde nello stesso topic; in un topic di un server, solo
+			// per quel server (o quei server, se ne condividono uno)
+			var thread int64
+			if u.Message.IsTopic && u.Message.ThreadID > 1 {
+				thread = u.Message.ThreadID
+			}
+			t.queueThread(kindStatus, thread, "", t.statusMsg(spacesOfTopic(c, thread)))
 		}
 		if len(upds) == 0 {
 			// il long-poll vero attende da solo; questa pausa protegge solo
@@ -433,11 +460,42 @@ func (t *Telegram) getUpdates(ctx context.Context, token string, offset int64) (
 	return out.Result, nil
 }
 
-// statusMsg fotografa lo stato di tutti i server: la risposta a /status.
-func (t *Telegram) statusMsg() string {
+// spacesOfTopic: gli spazi assegnati al topic thread (nil = tutti: thread 0,
+// cioè il Generale, o un topic che non è di nessun server).
+func spacesOfTopic(c Config, thread int64) map[string]bool {
+	if thread == 0 {
+		return nil
+	}
+	var out map[string]bool
+	for id, th := range c.Topics {
+		if th == thread {
+			if out == nil {
+				out = map[string]bool{}
+			}
+			out[id] = true
+		}
+	}
+	return out
+}
+
+// statusMsg fotografa lo stato dei server: la risposta a /status. only
+// limita agli spazi indicati (nil = tutti).
+func (t *Telegram) statusMsg(only map[string]bool) string {
 	now := time.Now().UTC()
 	lines := []string{t.tr("📊 <b>Stato dei server</b>")}
-	for _, sp := range t.st.ListSpaces() {
+	spaces := t.st.ListSpaces()
+	if only != nil {
+		var sel []store.Space
+		for _, sp := range spaces {
+			if only[sp.ID] {
+				sel = append(sel, sp)
+			}
+		}
+		if len(sel) > 0 { // altrimenti erano server eliminati: tutti
+			spaces = sel
+		}
+	}
+	for _, sp := range spaces {
 		lk, err := t.st.CurrentLock(sp.ID)
 		if err != nil {
 			continue
@@ -537,13 +595,19 @@ func esc(s string) string { return html.EscapeString(s) }
 // queue accoda senza mai bloccare l'hub: se Telegram è irraggiungibile e la
 // coda si riempie, si perde l'annuncio, non la sessione di gioco. A bot
 // spento o con quel tipo di messaggio disattivato non accoda nulla (false).
-func (t *Telegram) queue(k kind, msg string) bool {
+// Il messaggio va nel topic dello spazio, se ne ha uno.
+func (t *Telegram) queue(k kind, space, msg string) bool {
+	return t.queueThread(k, t.config().topic(space), space, msg)
+}
+
+// queueThread accoda per un topic preciso (0 = chat principale).
+func (t *Telegram) queueThread(k kind, thread int64, space, msg string) bool {
 	c := t.config()
 	if !c.active() || !c.wants(k) {
 		return false
 	}
 	select {
-	case t.out <- outMsg{token: c.Token, chatID: c.ChatID, text: msg}:
+	case t.out <- outMsg{token: c.Token, chatID: c.ChatID, text: msg, thread: thread, space: space}:
 		return true
 	default:
 		log.Print(i18n.Lf("telegram: coda piena, annuncio scartato"))
@@ -571,9 +635,13 @@ func (t *Telegram) send(ctx context.Context, m outMsg) {
 	var err error
 	for try := 1; ; try++ {
 		var retry bool
-		retry, err = t.sendOnce(ctx, m.token, m.chatID, m.text)
+		retry, err = t.sendOnce(ctx, m.token, m.chatID, m.thread, m.text)
 		if err == nil {
 			t.recordSent(m.token, m.chatID)
+			return
+		}
+		if m.thread != 0 && threadNotFound(err) {
+			t.sendGeneral(ctx, m)
 			return
 		}
 		if !retry || try == sendTries || ctx.Err() != nil {
@@ -590,16 +658,48 @@ func (t *Telegram) send(ctx context.Context, m outMsg) {
 	log.Print(i18n.Lf("telegram: annuncio non inviato: %v", err))
 }
 
+// sendGeneral: il topic del server non esiste più (eliminato dal gruppo).
+// L'annuncio si rimanda una volta nella chat principale e lo stato del bot
+// mostra quale topic manca, finché l'admin non sistema la mappa.
+func (t *Telegram) sendGeneral(ctx context.Context, m outMsg) {
+	_, err := t.sendOnce(ctx, m.token, m.chatID, 0, m.text)
+	if err != nil {
+		err = t.redact(err, m.token)
+	} else {
+		err = i18n.Errorf("topic di %s non trovato su Telegram (eliminato?): i messaggi vanno nel topic Generale", t.name(m.space))
+	}
+	t.recordErr(m.token, m.chatID, err, false)
+	log.Print(i18n.Lf("telegram: %v", err))
+}
+
+// threadNotFound: Telegram rifiuta il message_thread_id perché il topic non
+// c'è più ("Bad Request: message thread not found").
+func threadNotFound(err error) bool {
+	var ae *apiErr
+	return errors.As(err, &ae) && strings.Contains(strings.ToLower(ae.desc), "thread not found")
+}
+
 // Test manda subito un messaggio di prova con la configurazione c (anche non
-// salvata), un tentativo solo. L'errore è già senza token.
-func (t *Telegram) Test(ctx context.Context, c Config) error {
+// salvata), un tentativo solo. space non vuoto: la prova va nel topic di quel
+// server (c.Topics), col suo nome nel testo. L'errore è già senza token.
+func (t *Telegram) Test(ctx context.Context, c Config, space string) error {
 	l := c.Lang
 	if l == "" {
 		l = i18n.Default()
 	}
 	msg := i18n.T(l, "✅ <b>MineSync</b>: messaggio di prova. Il bot è configurato correttamente.")
-	_, err := t.sendOnce(ctx, c.Token, c.ChatID, msg)
+	var thread int64
+	if space != "" {
+		thread = c.topic(space)
+		msg = i18n.Tf(l, "✅ <b>MineSync</b>: messaggio di prova per <b>%s</b>. Gli annunci di questo server arriveranno qui.", esc(t.name(space)))
+	}
+	_, err := t.sendOnce(ctx, c.Token, c.ChatID, thread, msg)
 	if err != nil {
+		if thread != 0 && threadNotFound(err) {
+			// il topic provato potrebbe non essere quello salvato: lo stato
+			// del bot non si tocca
+			return i18n.Errorf("topic di %s non trovato su Telegram (eliminato?): i messaggi vanno nel topic Generale", t.name(space))
+		}
 		err = t.redact(err, c.Token)
 		t.recordErr(c.Token, c.ChatID, err, false)
 		return err
@@ -610,21 +710,27 @@ func (t *Telegram) Test(ctx context.Context, c Config) error {
 
 // sendOnce chiama sendMessage; retry dice se ha senso riprovare (rete, 5xx,
 // 429), non per gli errori di configurazione (401 token, 400 chat).
-func (t *Telegram) sendOnce(ctx context.Context, token, chatID, msg string) (retry bool, err error) {
-	body, err := json.Marshal(map[string]any{
+// thread > 0: nel topic indicato (gruppi forum); mai 1, che è il Generale e
+// Telegram lo rifiuta.
+func (t *Telegram) sendOnce(ctx context.Context, token, chatID string, thread int64, msg string) (retry bool, err error) {
+	req := map[string]any{
 		"chat_id": chatID, "text": msg, "parse_mode": "HTML",
 		"disable_web_page_preview": true,
-	})
+	}
+	if thread > 1 {
+		req["message_thread_id"] = thread
+	}
+	body, err := json.Marshal(req)
 	if err != nil {
 		return false, err
 	}
 	url := fmt.Sprintf("%s/bot%s/sendMessage", t.base, token)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return false, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := t.hc.Do(req)
+	hreq.Header.Set("Content-Type", "application/json")
+	resp, err := t.hc.Do(hreq)
 	if err != nil {
 		return true, err
 	}
@@ -635,6 +741,17 @@ func (t *Telegram) sendOnce(ctx context.Context, token, chatID, msg string) (ret
 	return false, nil
 }
 
+// apiErr è la risposta d'errore di Telegram: status e descrizione, tenuta
+// da parte per riconoscere i casi particolari (topic eliminato).
+type apiErr struct{ status, desc string }
+
+func (e *apiErr) Error() string {
+	if e.desc == "" {
+		return e.status
+	}
+	return e.status + " (" + e.desc + ")"
+}
+
 // apiError: lo status di Telegram con la sua descrizione ("401 Unauthorized
 // (Unauthorized)", "400 Bad Request (Bad Request: chat not found)").
 func apiError(resp *http.Response) (retry bool, err error) {
@@ -642,12 +759,8 @@ func apiError(resp *http.Response) (retry bool, err error) {
 		Description string `json:"description"`
 	}
 	_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&out)
-	st := resp.Status
-	if d := strings.TrimSpace(out.Description); d != "" {
-		st += " (" + d + ")"
-	}
 	retry = resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests
-	return retry, i18n.Errorf("telegram ha risposto %s", st)
+	return retry, i18n.Errorf("telegram ha risposto %s", &apiErr{status: resp.Status, desc: strings.TrimSpace(out.Description)})
 }
 
 // recordSent e recordErr aggiornano lo stato solo se riguardano la

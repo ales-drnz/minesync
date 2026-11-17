@@ -10,9 +10,12 @@ package settings
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 
 	"minesync/server/internal/i18n"
@@ -38,6 +41,23 @@ type Telegram struct {
 	ChatID  string `json:"chatId,omitempty"`
 	Lang    string `json:"lang,omitempty"` // "it", "en" o "" = lingua dell'hub
 	Notify  Notify `json:"notify"`
+	// Topics: gruppi "forum" con un topic per server. id dello spazio →
+	// message_thread_id del suo topic (sempre > 1: il topic "Generale" non ha
+	// thread id e Telegram rifiuta 1). Gli spazi senza voce scrivono nella
+	// chat principale.
+	Topics map[string]int64 `json:"topics,omitempty"`
+}
+
+// Equal confronta due configurazioni (Telegram ha una mappa: niente ==).
+func (tg Telegram) Equal(o Telegram) bool {
+	return tg.Enabled == o.Enabled && tg.Token == o.Token && tg.ChatID == o.ChatID &&
+		tg.Lang == o.Lang && tg.Notify == o.Notify && maps.Equal(tg.Topics, o.Topics)
+}
+
+// clone: copia indipendente (la mappa dei topic non va condivisa).
+func (tg Telegram) clone() Telegram {
+	tg.Topics = maps.Clone(tg.Topics)
+	return tg
 }
 
 // DefaultTelegram: bot spento, tutte le notifiche attive (quando lo si
@@ -95,7 +115,7 @@ func (s *Store) Telegram() (tg Telegram, ok bool) {
 	if s.s.Telegram == nil {
 		return DefaultTelegram(), false
 	}
-	return *s.s.Telegram, true
+	return s.s.Telegram.clone(), true
 }
 
 // UpdateTelegram applica fn alla sezione telegram (ai default se assente),
@@ -106,7 +126,7 @@ func (s *Store) UpdateTelegram(fn func(*Telegram) error) (Telegram, error) {
 	defer s.mu.Unlock()
 	tg := DefaultTelegram()
 	if s.s.Telegram != nil {
-		tg = *s.s.Telegram
+		tg = s.s.Telegram.clone()
 	}
 	if err := fn(&tg); err != nil {
 		return Telegram{}, err
@@ -198,5 +218,73 @@ func (tg Telegram) Validate() error {
 	if tg.Enabled && (tg.Token == "" || tg.ChatID == "") {
 		return i18n.Errorf("%w: per attivare il bot servono token e chat id", store.ErrBadRequest)
 	}
+	for id, th := range tg.Topics {
+		if th <= 1 {
+			return i18n.Errorf("%w: topic di %s non valido (serve un numero maggiore di 1)", store.ErrBadRequest, id)
+		}
+	}
 	return nil
+}
+
+// --- topic dei gruppi forum ---
+
+// Errori di ParseTopic (l'API li rende con il nome del server).
+var ErrTopicInvalid = errors.New("topic non valido")
+
+// TopicChatError: il link del topic è di un'altra chat. Chat è la chat del
+// link nella forma del chat id ("-100…" oppure "@nome").
+type TopicChatError struct{ Chat string }
+
+func (e *TopicChatError) Error() string { return "topic di un'altra chat: " + e.Chat }
+
+var (
+	// https://t.me/c/<id interno>/<thread>[/<messaggio>] (gruppi privati)
+	reTopicPrivate = regexp.MustCompile(`^(?:https?://)?(?:t|telegram)\.me/c/([0-9]{1,20})/([0-9]{1,20})(?:/[0-9]{1,20})?/?$`)
+	// https://t.me/<username>/<thread>[/<messaggio>] (gruppi pubblici)
+	reTopicPublic = regexp.MustCompile(`^(?:https?://)?(?:t|telegram)\.me/([A-Za-z][A-Za-z0-9_]{3,31})/([0-9]{1,20})(?:/[0-9]{1,20})?/?$`)
+	reDigits      = regexp.MustCompile(`^[0-9]{1,20}$`)
+)
+
+// ParseTopic legge il topic di un server com'è scritto dall'admin: il numero
+// del thread oppure il link del topic copiato da Telegram. Restituisce 0 per
+// "nessun topic" (vuoto, oppure 1 = il topic Generale). Se il link indica la
+// chat e chatID è nella stessa forma, devono coincidere (*TopicChatError).
+func ParseTopic(v, chatID string) (int64, error) {
+	v = strings.TrimSpace(v)
+	if i := strings.IndexAny(v, "?#"); i >= 0 {
+		v = v[:i] // ?single, ?thread=… : non servono
+	}
+	if v == "" {
+		return 0, nil
+	}
+	var linkChat, num string
+	switch {
+	case reDigits.MatchString(v):
+		num = v
+	case reTopicPrivate.MatchString(v):
+		m := reTopicPrivate.FindStringSubmatch(v)
+		linkChat, num = "-100"+m[1], m[2]
+		if strings.HasPrefix(chatID, "-100") && chatID != linkChat {
+			return 0, &TopicChatError{Chat: linkChat}
+		}
+	case reTopicPublic.MatchString(v):
+		m := reTopicPublic.FindStringSubmatch(v)
+		if strings.EqualFold(m[1], "c") || strings.EqualFold(m[1], "s") {
+			return 0, ErrTopicInvalid
+		}
+		linkChat, num = "@"+m[1], m[2]
+		if strings.HasPrefix(chatID, "@") && !strings.EqualFold(chatID, linkChat) {
+			return 0, &TopicChatError{Chat: linkChat}
+		}
+	default:
+		return 0, ErrTopicInvalid
+	}
+	n, err := strconv.ParseInt(num, 10, 64)
+	switch {
+	case err != nil || n <= 0:
+		return 0, ErrTopicInvalid
+	case n == 1:
+		return 0, nil // il topic Generale: si scrive senza thread id
+	}
+	return n, nil
 }

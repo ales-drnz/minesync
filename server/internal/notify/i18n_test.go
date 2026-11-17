@@ -19,7 +19,7 @@ func TestMessagesEnglish(t *testing.T) {
 		t.Fatalf("openMsg EN: %q", msg)
 	}
 	st.CreateSpace("SkyFactory", "minecraft", nil)
-	if msg := tg.statusMsg(); !strings.Contains(msg, "Server status") || !strings.Contains(msg, "SkyFactory</b> — closed") {
+	if msg := tg.statusMsg(nil); !strings.Contains(msg, "Server status") || !strings.Contains(msg, "SkyFactory</b> — closed") {
 		t.Fatalf("statusMsg EN: %q", msg)
 	}
 }
