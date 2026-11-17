@@ -63,6 +63,8 @@ type pingMsg struct {
 	err        error
 	hubVersion string
 	dnsZone    string
+	diskFree   int64 // spazio libero sul volume dati dell'hub (0 = non esposto)
+	diskTotal  int64
 }
 
 // whoamiMsg / whoamiErrMsg: esito di whoami. L'errore ha un tipo suo: se
@@ -121,6 +123,8 @@ type App struct {
 	updPromptPending bool   // popup "riavvia" da mostrare appena la schermata è libera
 	restart          bool   // uscendo, rilancia il binario aggiornato
 	dnsZone          string // zona DNS dell'hub, per l'indirizzo fisso zerotier.<spazio>.<zona>
+	hubDiskFree      int64  // spazio libero sull'hub (dallo status; 0 = ignoto)
+	hubDiskTotal     int64
 
 	sseCh   chan api.Event
 	sseKick chan struct{} // forza la riconnessione SSE (es. cambio hub)
@@ -486,7 +490,8 @@ func (a *App) ping() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		defer cancel()
 		st, err := client.Status(ctx)
-		return pingMsg{latency: time.Since(start), err: err, hubVersion: st.Version, dnsZone: st.DNSZone}
+		return pingMsg{latency: time.Since(start), err: err, hubVersion: st.Version, dnsZone: st.DNSZone,
+			diskFree: st.DiskFree, diskTotal: st.DiskTotal}
 	})
 }
 
@@ -695,6 +700,7 @@ func (a *App) handleUpdate(msg tea.Msg) tea.Cmd {
 		if msg.err == nil {
 			a.latency = msg.latency
 			a.dnsZone = msg.dnsZone
+			a.hubDiskFree, a.hubDiskTotal = msg.diskFree, msg.diskTotal
 			if !a.pingedOK {
 				// questa versione parla con l'hub: il backup dell'update
 				// precedente non serve più (C6)

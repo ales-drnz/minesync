@@ -127,6 +127,12 @@ func (s *homeScreen) view(w, h int) string {
 	feedW := w - listW - 1
 
 	var rows []string
+	if warn := s.app.hubDiskWarning(); warn != "" {
+		for _, l := range wrapText(warn, listW-6) {
+			rows = append(rows, sErr.Render(l))
+		}
+		rows = append(rows, "")
+	}
 	if !s.loaded {
 		rows = append(rows, sMuted.Render(i18n.S("carico…")))
 	} else if s.loadErr != "" {
@@ -186,6 +192,18 @@ func (s *homeScreen) view(w, h int) string {
 	feed := panel(i18n.S("attività"), lipgloss.JoinVertical(lipgloss.Left, evRows...), feedW, false)
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, list, " ", feed)
+}
+
+// hubDiskWarning: avviso se il volume dati dell'hub ha meno del 10% libero
+// (lo status lo espone dalla 3.2.0; "" se va bene o se l'hub non lo dice).
+// Sotto la soglia dura l'hub rifiuta i salvataggi: meglio saperlo prima.
+func (a *App) hubDiskWarning() string {
+	if a.hubDiskTotal <= 0 || a.hubDiskFree*10 >= a.hubDiskTotal {
+		return ""
+	}
+	pct := float64(a.hubDiskFree) * 100 / float64(a.hubDiskTotal)
+	return i18n.Sf("⚠ hub quasi pieno: liberi %s su %s (%.1f%%). Oltre la soglia l'hub rifiuta i salvataggi.",
+		humanBytes(a.hubDiskFree), humanBytes(a.hubDiskTotal), pct)
 }
 
 // eventMsg pulisce il messaggio per il feed: dai salvataggi toglie la coda

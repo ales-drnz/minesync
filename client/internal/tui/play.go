@@ -17,6 +17,7 @@ import (
 	"minesync/client/internal/api"
 	"minesync/client/internal/config"
 	"minesync/client/internal/i18n"
+	"minesync/client/internal/lockbeat"
 	"minesync/client/internal/mc"
 	"minesync/client/internal/session"
 	"minesync/client/internal/syncx"
@@ -43,6 +44,10 @@ type playScreen struct {
 	players   []string
 	lastGen   int
 	lastSave  time.Time
+	hubSaved  time.Time      // ultimo stato confermato dall'hub (3.2.0)
+	uploading bool           // caricamento verso l'hub in background
+	upload    syncx.Progress // suo avanzamento
+	alert     *playAlert     // avviso grave e persistente (lock perso, hub pieno…)
 	notes     []noteLine
 	done      bool
 	doneErr   error
@@ -71,6 +76,13 @@ type playScreen struct {
 
 // playTickMsg: battito da un secondo, solo per uptime e countdown autosave.
 type playTickMsg struct{}
+
+// playAlert è un avviso che non deve passare inosservato: resta in cima alla
+// colonna di stato finché la sessione non viene chiusa.
+type playAlert struct {
+	title string
+	text  string
+}
 
 type noteLine struct {
 	text string
@@ -463,6 +475,11 @@ func (p *playScreen) applyEvent(ev session.Event) {
 		if ev.Warn {
 			p.addNote(ev.Note, true)
 		}
+		if a := alertFor(ev.Err); a != nil {
+			p.alert = a
+		} else if ev.Alert {
+			p.alert = &playAlert{title: i18n.S("attenzione"), text: ev.Note}
+		}
 	case session.EvPlayers:
 		p.players = ev.Players
 	case session.EvLaunch:
@@ -475,11 +492,24 @@ func (p *playScreen) applyEvent(ev session.Event) {
 	case session.EvSaved:
 		p.lastGen = ev.Gen
 		p.lastSave = time.Now()
+		if !ev.HubSavedAt.IsZero() {
+			p.hubSaved = ev.HubSavedAt
+		}
+	case session.EvUpload:
+		p.uploading = ev.Uploading
+		p.upload = ev.Progress
+		if !ev.HubSavedAt.IsZero() {
+			p.hubSaved = ev.HubSavedAt
+		}
 	case session.EvDone:
 		p.done = true
 		p.doneErr = ev.Err
+		p.uploading = false
 		if ev.Err != nil {
 			p.addNote(ev.Err.Error(), true)
+			if a := alertFor(ev.Err); a != nil {
+				p.alert = a
+			}
 		} else {
 			p.addNote(i18n.S("Sessione terminata. Stato salvato sull'hub."), false)
 		}
@@ -545,7 +575,7 @@ func (p *playScreen) view(w, h int) string {
 		p.layout()
 	}
 	var panels []string
-	for _, pn := range []string{p.viewSession(), p.viewServer(), p.viewAddress(),
+	for _, pn := range []string{p.viewAlert(), p.viewSession(), p.viewServer(), p.viewAddress(),
 		p.viewPlayers(), p.viewTransfer(), p.viewNotes()} {
 		if pn != "" {
 			panels = append(panels, pn)
@@ -575,6 +605,7 @@ func (p *playScreen) viewSession() string {
 		lbl("uptime    ", time.Since(p.started).Round(time.Second).String()),
 		lbl(i18n.S("versione  "), genTxt(p.lastGen, p.sp.Head)),
 		lbl(i18n.S("salvato   "), agoShort(p.lastSave)),
+		lbl(i18n.S("sull'hub  "), p.hubSavedText()),
 	}
 	// countdown al prossimo autosave: il ticker parte con lo script
 	if p.state == session.StateRunning && !p.launchAt.IsZero() {
@@ -592,6 +623,53 @@ func (p *playScreen) viewSession() string {
 		rows = append(rows, sWarn.Render(i18n.Sf("⚠ in affanno (%d avvisi/2m)", len(p.lagTimes))))
 	}
 	return panel(i18n.S("sessione"), lipgloss.JoinVertical(lipgloss.Left, rows...), playStatusW, false)
+}
+
+// hubSavedText: età dell'ultimo stato confermato dall'hub, o l'avanzamento
+// del caricamento in background mentre è in corso. Si aggiorna a ogni tick.
+func (p *playScreen) hubSavedText() string {
+	if p.uploading {
+		pct := 0
+		if p.upload.TotalBytes > 0 {
+			pct = int(p.upload.DoneBytes * 100 / p.upload.TotalBytes)
+		}
+		return i18n.Sf("in caricamento… %d%%", min(pct, 100))
+	}
+	return agoShort(p.hubSaved)
+}
+
+// viewAlert: riquadro rosso in cima alla colonna per gli avvisi gravi.
+func (p *playScreen) viewAlert() string {
+	if p.alert == nil {
+		return ""
+	}
+	var rows []string
+	for _, l := range wrapText(p.alert.text, playStatusW-6) {
+		rows = append(rows, sErr.Render(l))
+	}
+	return panel("⚠ "+p.alert.title, lipgloss.JoinVertical(lipgloss.Left, rows...), playStatusW, true)
+}
+
+// alertFor riconosce gli errori che meritano l'avviso grave: lock perso,
+// spazio sparito dall'hub, disco dell'hub pieno. nil per tutti gli altri.
+func alertFor(err error) *playAlert {
+	if err == nil {
+		return nil
+	}
+	var ae *api.APIError
+	isAPI := errors.As(err, &ae)
+	switch {
+	case errors.Is(err, session.ErrLockLost), errors.Is(err, lockbeat.ErrLockLost), api.IsLockLost(err):
+		return &playAlert{title: i18n.S("lock perso"),
+			text: i18n.S("Un altro ha preso lo spazio (o il lock è scaduto): il server è stato fermato e il mondo è salvato solo su questo PC.")}
+	case errors.Is(err, lockbeat.ErrSpaceGone): // (un 404 generico dell'hub non basta: "non trovato" vale per tutto)
+		return &playAlert{title: i18n.S("spazio sparito"),
+			text: i18n.S("Lo spazio non esiste più sull'hub: il mondo è salvato solo su questo PC.")}
+	case isAPI && (ae.Status == 507 || ae.Code == "disk_full"):
+		return &playAlert{title: i18n.S("hub pieno"),
+			text: i18n.S("L'hub ha il disco pieno: i salvataggi non arrivano all'hub. Libera spazio sull'hub; il mondo resta su questo PC.")}
+	}
+	return nil
 }
 
 func (p *playScreen) viewServer() string {
@@ -690,7 +768,7 @@ func (p *playScreen) viewConsole() string {
 	inputLine := lipgloss.NewStyle().PaddingLeft(1).Render(p.input.View())
 	if p.done {
 		inputLine = lipgloss.NewStyle().PaddingLeft(1).Render(
-			sMuted.Render(i18n.S("sessione terminata — premi esc per tornare indietro")))
+			sMuted.Render(truncate(i18n.S("sessione terminata — premi esc per tornare indietro"), p.w-playStatusW-2)))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, consolePanel, inputLine)
 }
