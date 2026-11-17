@@ -128,6 +128,7 @@ func newPlay(app *App, sp api.Space, local string, opt playOptions) *playScreen 
 		CachePath: filepath.Join(cacheDir, sp.ID+".json"),
 		Ignore:    sp.Ignore, Owner: app.who.Name, LockSession: opt.lockSession,
 		JavaPath: javaPath, DiscardLocal: opt.discardLocal,
+		UploadLimitKBps: app.cfg.UploadLimitKBps,
 	})
 	info := mc.Inspect(local)
 	p := &playScreen{
