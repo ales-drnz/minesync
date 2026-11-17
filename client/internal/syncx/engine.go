@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	workers  = 8
+	workers  = 8 // trasferimenti in primo piano (pull, push finale e manuale)
 	retries  = 2
 	bufSize  = 1 << 20
 	speedWin = 3 * time.Second
@@ -54,6 +54,18 @@ type Engine struct {
 	// LockSession: sessione del lock tenuto dal chiamante; il push la passa
 	// all'hub, che lega il push a quel lock.
 	LockSession string
+	// Warn riceve gli avvisi non bloccanti (già tradotti): file saltati
+	// perché illeggibili o con un nome non ammesso, permessi non applicabili
+	// sul filesystem, ecc. Può essere nil.
+	Warn func(msg string)
+
+	// opMu serializza le operazioni pubbliche (Pull, Push, Snapshot,
+	// PushSnapshot…): l'engine ha stato interno (meta, contatori di
+	// progresso) e la sessione può avere un upload in background.
+	opMu sync.Mutex
+
+	chmodWarn sync.Once    // avviso "permessi non supportati" una volta sola
+	upBps     atomic.Int64 // velocità di upload misurata (byte/s, 0 = ignota)
 
 	mu       sync.Mutex
 	active   map[string]struct{}
@@ -161,16 +173,34 @@ func (e *Engine) fileDone(rel string) {
 	e.report(false)
 }
 
-// ScanLocal produce manifest e cache correnti della cartella locale.
+// warn inoltra un avviso al chiamante (se interessato).
+func (e *Engine) warn(msg string) {
+	if e.Warn != nil {
+		e.Warn(msg)
+	}
+}
+
+// ScanLocal produce manifest e cache correnti della cartella locale. I file
+// illeggibili non compaiono nel manifest (vedi ScanResult.Unreadable): chi
+// pusha conserva per loro la versione dell'hub.
 func (e *Engine) ScanLocal() (api.Manifest, Cache, error) {
+	res, err := e.scanLocal(scanOpts{})
+	return res.Manifest, res.Cache, err
+}
+
+// scanLocal è ScanLocal con le opzioni della scansione (snapshot).
+func (e *Engine) scanLocal(opt scanOpts) (ScanResult, error) {
 	e.mu.Lock()
 	e.active = map[string]struct{}{}
 	e.mu.Unlock()
 	e.setPhase("scan")
 	prior, meta := LoadCacheMeta(e.CachePath, e.LocalPath)
+	if v := e.upBps.Load(); v > 0 {
+		meta.UpBps = v // misura più recente di quella su disco
+	}
 	e.meta = meta
 	n := 0
-	man, next, err := Scan(e.LocalPath, e.Matcher, prior, func(rel string, hashed bool) {
+	res, err := scanTree(e.LocalPath, e.Matcher, prior, func(rel string, hashed bool) {
 		n++
 		if hashed {
 			e.mu.Lock()
@@ -178,16 +208,22 @@ func (e *Engine) ScanLocal() (api.Manifest, Cache, error) {
 			e.mu.Unlock()
 			e.report(false)
 		}
-	})
+	}, opt)
 	if err != nil {
-		return nil, nil, err
+		return res, err
 	}
-	return man, next, nil
+	reportScanIssues(res, e.warn)
+	return res, nil
 }
 
-// saveMeta registra la generazione di base del locale insieme alla cache.
-func (e *Engine) saveMeta(cache Cache, gen int) error {
-	e.meta = CacheMeta{Root: e.LocalPath, Gen: gen}
+// saveMeta registra la generazione di base del locale (numero e digest)
+// insieme alla cache. Gli altri metadati (velocità di upload misurata) si
+// conservano.
+func (e *Engine) saveMeta(cache Cache, gen int, digest string) error {
+	e.meta.Root, e.meta.Gen, e.meta.GenDigest = e.LocalPath, gen, digest
+	if gen != genPulling {
+		e.meta.PrevGen = 0
+	}
 	return SaveCacheMeta(e.CachePath, cache, e.meta)
 }
 

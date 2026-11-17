@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"minesync/client/internal/i18n"
@@ -67,6 +68,8 @@ type Supervisor struct {
 
 	mu      sync.Mutex
 	running bool
+
+	savePending atomic.Bool // save-all flush inviato, conferma attesa
 
 	evMu sync.Mutex
 	evQ  []Ev
@@ -201,7 +204,7 @@ func Start(ctx context.Context, info ServerInfo, javaExe string) (*Supervisor, e
 			if !ok {
 				return
 			}
-			if e, is := classify(line); is {
+			if e, is := s.classify(line); is {
 				s.pushEv(e) // i fatti non si perdono mai
 			}
 			select {
@@ -354,12 +357,63 @@ func systemBody(line string) string {
 	return strings.ToLower(strings.TrimSpace(body))
 }
 
+// serverInfoRe riconosce una riga di log INFO del thread principale del
+// server e ne isola il corpo, nei formati in circolazione:
+//
+//	[12:00:00] [Server thread/INFO]: corpo                          vanilla, Fabric
+//	[12:00:00] [Server thread/INFO] [minecraft/MinecraftServer]: corpo   Forge
+//	[29Jan2024 12:00:00.123] [Server thread/INFO] [net.minecraft…/]: corpo  NeoForge
+//	[12:00:00] [Server thread/INFO] (Minecraft) corpo               Fabric/Quilt
+//	[12:00:00 INFO]: corpo                                         Paper/Spigot
+//
+// L'eventuale "> " davanti è il prompt della console jline.
+var serverInfoRe = regexp.MustCompile(
+	`^>?\s*\[[^\]]*\] \[Server thread/INFO\](?: \[[^\]]*\]:| \([^)]*\)|:) (.*)$` +
+		`|^>?\s*\[\d{1,2}:\d{2}:\d{2} INFO\]: (.*)$`)
+
+// savedBodies: i corpi ESATTI con cui il server conferma il salvataggio
+// (vanilla, Forge/NeoForge, Paper/Spigot, Bukkit vecchi).
+var savedBodies = map[string]bool{
+	"Saved the game":           true,
+	"Saved the game.":          true,
+	"All dimensions are saved": true,
+	"ThreadedAnvilChunkStorage: All dimensions are saved": true,
+	"Saved the world":  true,
+	"Saved the world.": true,
+}
+
 // IsSaveConfirmed riconosce le righe di conferma del flush del mondo.
+//
+// Il confronto è sul corpo ESATTO di una riga INFO del thread del server:
+// prima bastava che il testo lo contenesse, e la chat lo poteva falsificare
+// in tanti modi ("/me Saved the game" → "* Steve Saved the game", "/say" →
+// "[Steve] Saved the game", un oggetto rinominato in un messaggio di morte,
+// i mod che riformattano la chat come "Steve » …"). Un falso "salvato"
+// faceva partire lo snapshot a mondo ancora in scrittura.
 func IsSaveConfirmed(line string) bool {
-	l := systemBody(line)
-	return strings.Contains(l, "saved the game") ||
-		strings.Contains(l, "all dimensions are saved") ||
-		strings.Contains(l, "saved the world")
+	m := serverInfoRe.FindStringSubmatch(strings.TrimRight(line, "\r\n"))
+	if m == nil {
+		return false
+	}
+	body := m[1]
+	if body == "" {
+		body = m[2]
+	}
+	return savedBodies[strings.TrimSpace(body)]
+}
+
+// ExpectSave segnala che è stato inviato un `save-all flush`: solo da qui
+// alla prima conferma una riga di conferma diventa il fatto EvSaved. Senza
+// salvataggio in attesa, una conferma (vera o falsa) non conta niente.
+func (s *Supervisor) ExpectSave() { s.savePending.Store(true) }
+
+// classify è classify con la regola di ExpectSave.
+func (s *Supervisor) classify(line string) (Ev, bool) {
+	e, ok := classify(line)
+	if ok && e.Kind == EvSaved && !s.savePending.CompareAndSwap(true, false) {
+		return Ev{}, false
+	}
+	return e, ok
 }
 
 // IsSaving riconosce le righe di avanzamento del salvataggio: su un mondo
@@ -370,7 +424,8 @@ func IsSaving(line string) bool {
 	return strings.Contains(l, "saving chunks for level") ||
 		strings.Contains(l, "saving the game") ||
 		strings.Contains(l, "saving players") ||
-		strings.Contains(l, "saving worlds")
+		strings.Contains(l, "saving worlds") ||
+		strings.Contains(l, "all chunks are saved")
 }
 
 // IsStopping riconosce l'inizio dello spegnimento del server.

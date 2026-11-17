@@ -4,6 +4,10 @@ package i18n
 // Regole: stessi verbi di formato nello stesso ordine (lo verifica un test),
 // e le etichette a larghezza fissa (es. "cartella  ") restano della stessa
 // larghezza, così le colonne dei pannelli non si spostano.
+//
+// Il catalogo può stare in più file: un altro catalog_en_*.go aggiunge le
+// sue voci a questa mappa da un func init() (il test di copertura vede la
+// mappa già completa). Un id va in UN solo file.
 var catalogEN = map[string]string{
 
 	// --- CLI ---
@@ -166,8 +170,6 @@ var catalogEN = map[string]string{
 
 	"il nome %q non è UTF-8 valido: rinominalo, altrimenti verrebbe caricato storpiato e poi cancellato": "the name %q is not valid UTF-8: rename it, otherwise it would be uploaded mangled and then deleted",
 
-	"il nome %q contiene caratteri non ammessi (':' o '\\'): rinominalo, su Windows non potrebbe esistere": "the name %q contains forbidden characters (':' or '\\'): rename it, it couldn't exist on Windows",
-
 	"%s è un collegamento a una cartella: MineSync non può sincronizzarne il contenuto, sostituiscilo con la cartella vera": "%s is a link to a folder: MineSync can't sync its contents, replace it with the real folder",
 
 	"base non aggiornata": "stale base",
@@ -311,8 +313,6 @@ var catalogEN = map[string]string{
 	"Autosave in corso": "Autosave in progress",
 
 	"Salvataggio manuale in corso": "Manual save in progress",
-
-	"Nessuna conferma di salvataggio entro %s: push comunque avviato.": "No save confirmation within %s: pushing anyway.",
 
 	"Server avviato (porta %s)": "Server started (port %s)",
 
@@ -718,4 +718,50 @@ var catalogEN = map[string]string{
 	"scelto dallo script del pack": "chosen by the pack's script",
 
 	"dopo il primo pull": "after the first pull",
+
+	// --- 3.2: autosave con outbox, nomi, spazio, digest ---
+
+	"%d file dell'hub hanno un nome non valido su questo sistema e non vengono scaricati, es. %s: chi li ha creati deve rinominarli.": "%d files on the hub have a name that is not valid on this system and are not downloaded, e.g. %s: whoever created them must rename them.",
+
+	"%d file non leggibili (bloccati da un altro programma o dall'antivirus?), es. %s: per questi resta la versione dell'hub.": "%d files could not be read (locked by another program or the antivirus?), e.g. %s: the hub's version is kept for them.",
+
+	"%d file saltati perché differiscono da un altro solo per le maiuscole, es. %s: su Windows e macOS sarebbero lo stesso file.": "%d files skipped because they differ from another one only in letter case, e.g. %s: on Windows and macOS they would be the same file.",
+
+	"%d file saltati perché il nome non è ammesso su Windows (caratteri come : ? * \" < > |, nomi riservati come CON o NUL, punto o spazio finale), es. %s: rinominali.": "%d files skipped because their name is not allowed on Windows (characters like : ? * \" < > |, reserved names like CON or NUL, trailing dot or space), e.g. %s: rename them.",
+
+	"%w: il server è stato fermato e il mondo è rimasto solo sul disco locale": "%w: the server was stopped and the world was left only on the local disk",
+
+	"Il filesystem della cartella non supporta i permessi dei file (exFAT/FAT?): il bit di esecuzione degli script non verrà applicato.": "The folder's filesystem does not support file permissions (exFAT/FAT?): the executable bit of scripts will not be applied.",
+
+	"La cartella cambia ancora dopo %s: snapshot comunque (i file che cambiano durante la lettura vengono riletti).": "The folder is still changing after %s: taking the snapshot anyway (files that change while being read are read again).",
+
+	"Lo spazio non esiste più sull'hub: push finale saltato. Il mondo è rimasto solo su questo PC.": "The space no longer exists on the hub: final push skipped. The world was left only on this PC.",
+
+	"Nessuna conferma di salvataggio entro %s: snapshot comunque avviato.": "No save confirmation within %s: snapshot started anyway.",
+
+	"Poco spazio su disco per lo snapshot dell'autosave: carico direttamente, il server resta in save-off fino alla fine del caricamento.": "Not enough disk space for the autosave snapshot: uploading directly, the server stays in save-off until the upload ends.",
+
+	"Pulizia dell'outbox non riuscita: %v": "Outbox cleanup failed: %v",
+
+	"SPAZIO CANCELLATO: questo server non esiste più sull'hub. Fermo il server; il mondo resta su questo PC.": "SPACE DELETED: this server no longer exists on the hub. Stopping the server; the world stays on this PC.",
+
+	"Salvataggio già in corso: ne parte un altro appena finisce.": "A save is already in progress: another one starts as soon as it ends.",
+
+	"errore interno dell'autosave: %v": "internal autosave error: %v",
+
+	"il file cambia mentre lo leggo": "the file keeps changing while being read",
+
+	"l'hub ha il disco pieno: non può salvare niente finché qualcuno non libera spazio sul NAS (%s)": "the hub's disk is full: nothing can be saved until someone frees space on the NAS (%s)",
+
+	"l'hub ha rifiutato un blob (file cambiato durante il caricamento?)": "the hub rejected a blob (file changed during the upload?)",
+
+	"spazio cancellato dall'hub": "space deleted from the hub",
+
+	"spazio su disco insufficiente": "not enough disk space",
+
+	"spazio su disco insufficiente in %s: il pull deve scaricare circa %s ma ne restano %s. Libera spazio e riprova (non è stato toccato niente).": "not enough disk space in %s: the pull must download about %s but only %s are left. Free some space and try again (nothing was touched).",
+
+	"spazio su disco insufficiente per lo snapshot dell'autosave": "not enough disk space for the autosave snapshot",
+
+	"un file è cambiato dopo lo snapshot e l'hub ne chiede la versione vecchia: si rifà lo snapshot al prossimo autosave": "a file changed after the snapshot and the hub asks for its old version: the snapshot is redone at the next autosave",
 }

@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -62,17 +64,20 @@ func retry(ctx context.Context, n int, fn func() error) error {
 	return err
 }
 
-// runPool esegue fn su ogni elemento con `workers` goroutine. Al primo errore
+// runPool esegue fn su ogni elemento con n goroutine (0 = workers). Al primo errore
 // annulla il contesto passato agli altri (gli elementi non ancora iniziati
 // vengono saltati) e restituisce quell'errore.
-func runPool(ctx context.Context, items []string, fn func(ctx context.Context, item string) error) error {
+func runPool(ctx context.Context, n int, items []string, fn func(ctx context.Context, item string) error) error {
 	cctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	jobs := make(chan string)
 	var wg sync.WaitGroup
 	var firstErr error
 	var errOnce sync.Once
-	for i := 0; i < workers; i++ {
+	if n <= 0 {
+		n = workers
+	}
+	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -115,7 +120,7 @@ func short(h string) string {
 // un temporaneo accanto a dst, l'hash SHA-256 viene verificato, il
 // temporaneo va su disco (fsync) e solo allora prende il posto di dst. Su
 // qualunque errore il temporaneo sparisce e dst resta com'era.
-func writeVerified(dst, hash string, perm os.FileMode, fill func(w io.Writer) error) error {
+func (e *Engine) writeVerified(dst, hash string, perm os.FileMode, fill func(w io.Writer) error) error {
 	tmp := dst + partSuffix
 	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
 	if err != nil {
@@ -142,7 +147,110 @@ func writeVerified(dst, hash string, perm os.FileMode, fill func(w io.Writer) er
 		return err
 	}
 	// il permesso di OpenFile passa per la umask: si fissa esplicitamente
-	return os.Chmod(dst, perm)
+	return e.chmod(dst, perm)
+}
+
+// chmod applica i permessi; sui filesystem che non li hanno (exFAT, FAT32,
+// certe condivisioni di rete) il chmod fallisce con EPERM/ENOTSUP: il
+// contenuto è comunque giusto, quindi si ignora con un solo avviso.
+func (e *Engine) chmod(path string, perm os.FileMode) error {
+	err := os.Chmod(path, perm)
+	if err != nil && chmodUnsupported(err) {
+		e.chmodWarn.Do(func() {
+			e.warn(i18n.S("Il filesystem della cartella non supporta i permessi dei file (exFAT/FAT?): il bit di esecuzione degli script non verrà applicato."))
+		})
+		return nil
+	}
+	return err
+}
+
+func chmodUnsupported(err error) bool {
+	return errors.Is(err, fs.ErrPermission) || errors.Is(err, errors.ErrUnsupported)
+}
+
+// existingDir risale da path fino alla prima cartella esistente (per
+// misurare lo spazio libero di una destinazione non ancora creata).
+func existingDir(path string) string {
+	p := filepath.Clean(path)
+	for {
+		if st, err := os.Stat(p); err == nil && st.IsDir() {
+			return p
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return p
+		}
+		p = parent
+	}
+}
+
+// rateLimiter è un token bucket condiviso dai worker di un upload: limita i
+// byte al secondo che lasciano il PC, così l'autosave in background non
+// satura l'uplink di chi ospita (e il gioco degli altri non lagga).
+type rateLimiter struct {
+	mu     sync.Mutex
+	rate   float64 // byte/s
+	burst  float64
+	tokens float64
+	last   time.Time
+}
+
+func newRateLimiter(bps int64) *rateLimiter {
+	if bps <= 0 {
+		return nil
+	}
+	b := float64(bps) / 4 // al massimo ~250 ms di raffica
+	if b < 32<<10 {
+		b = 32 << 10
+	}
+	return &rateLimiter{rate: float64(bps), burst: b, tokens: b, last: time.Now()}
+}
+
+// wait consuma n token, aspettando quanto serve (o fino alla fine di ctx).
+func (l *rateLimiter) wait(ctx context.Context, n int) error {
+	if l == nil || n <= 0 {
+		return nil
+	}
+	l.mu.Lock()
+	now := time.Now()
+	l.tokens += now.Sub(l.last).Seconds() * l.rate
+	if l.tokens > l.burst {
+		l.tokens = l.burst
+	}
+	l.last = now
+	l.tokens -= float64(n)
+	deficit := -l.tokens
+	l.mu.Unlock()
+	if deficit <= 0 {
+		return nil
+	}
+	t := time.NewTimer(time.Duration(deficit / l.rate * float64(time.Second)))
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// limitedReader passa i byte al ritmo del limiter (letture piccole, così il
+// flusso è regolare e il watchdog vede progresso).
+type limitedReader struct {
+	r   io.Reader
+	l   *rateLimiter
+	ctx context.Context
+}
+
+func (lr *limitedReader) Read(p []byte) (int, error) {
+	if len(p) > 16<<10 {
+		p = p[:16<<10]
+	}
+	n, err := lr.r.Read(p)
+	if werr := lr.l.wait(lr.ctx, n); werr != nil && err == nil {
+		err = werr
+	}
+	return n, err
 }
 
 // fileMode: permessi di un file materializzato dal manifest.

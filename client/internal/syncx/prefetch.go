@@ -122,7 +122,7 @@ func (e *Engine) prefetchBlob(ctx context.Context, hash string, size int64) erro
 		return err
 	}
 	defer body.Close()
-	err = writeVerified(e.blobCachePath(hash), hash, 0o644, func(w io.Writer) error {
+	err = e.writeVerified(e.blobCachePath(hash), hash, 0o644, func(w io.Writer) error {
 		_, err := io.Copy(w, body)
 		return err
 	})

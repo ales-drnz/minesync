@@ -12,6 +12,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -52,6 +54,10 @@ type GenSummary struct {
 	TS      time.Time `json:"ts"`
 	Restore int       `json:"restore,omitempty"`
 	Stats   Stats     `json:"stats"`
+	// Digest: SHA-256 del manifest canonico della generazione (hub ≥3.2;
+	// "" dagli hub vecchi). Identifica la generazione anche se il suo numero
+	// viene riusato (NAS ripristinato, spazio ricreato).
+	Digest string `json:"digest,omitempty"`
 }
 
 type LockInfo struct {
@@ -91,6 +97,9 @@ type Status struct {
 	UptimeSec int    `json:"uptimeSec"`
 	Spaces    int    `json:"spaces"`
 	DNSZone   string `json:"dnsZone"` // zona del DNS interno dell'hub ("" se off)
+	// spazio sul volume dei dati dell'hub (byte; 0 = hub che non lo dice)
+	DiskFree  int64 `json:"diskFree,omitempty"`
+	DiskTotal int64 `json:"diskTotal,omitempty"`
 }
 
 type Whoami struct {
@@ -107,7 +116,58 @@ type APIError struct {
 	Stale  bool
 }
 
-func (e *APIError) Error() string { return e.Msg }
+func (e *APIError) Error() string {
+	if e.diskFull() {
+		return i18n.Sf("l'hub ha il disco pieno: non può salvare niente finché qualcuno non libera spazio sul NAS (%s)", e.Msg)
+	}
+	return e.Msg
+}
+
+func (e *APIError) diskFull() bool { return e.Status == 507 || e.Code == "disk_full" }
+
+// Codici macchina dell'hub (campo "code" degli errori).
+const (
+	CodeLocked     = "locked"
+	CodeMassDelete = "mass_delete"
+	CodeStaleBase  = "stale_base" // parentDigest non combacia: la base è un'altra generazione
+	CodeDiskFull   = "disk_full"  // 507: disco dell'hub pieno
+	CodeBadPath    = "bad_path"   // nome non ammesso nel manifest
+	CodeSpaceGone  = "space_gone" // lo spazio non esiste più
+)
+
+func asAPIError(err error) (*APIError, bool) {
+	var ae *APIError
+	ok := errors.As(err, &ae)
+	return ae, ok
+}
+
+// IsStaleBase: l'hub ha rifiutato il push perché la generazione di base
+// dichiarata non è quella che ha lui (stesso numero, contenuto diverso).
+func IsStaleBase(err error) bool {
+	ae, ok := asAPIError(err)
+	return ok && ae.Code == CodeStaleBase
+}
+
+// IsDiskFull: l'hub non ha più spazio su disco (507).
+func IsDiskFull(err error) bool {
+	ae, ok := asAPIError(err)
+	return ok && ae.diskFull()
+}
+
+// IsSpaceGone: lo spazio non esiste più sull'hub (cancellato da un admin).
+// Gli hub vecchi rispondono 404 senza codice: per un heartbeat vuol dire
+// comunque la stessa cosa.
+func IsSpaceGone(err error) bool {
+	ae, ok := asAPIError(err)
+	return ok && ae.Status == 404 && (ae.Code == CodeSpaceGone || ae.Code == "")
+}
+
+// IsBadRequest: l'hub ha rifiutato la richiesta in quanto tale (4xx diverso
+// da timeout, conflitto e limiti di frequenza): ripeterla identica non serve.
+func IsBadRequest(err error) bool {
+	ae, ok := asAPIError(err)
+	return ok && ae.Status >= 400 && ae.Status < 500 && ae.Status != 408 && ae.Status != 409 && ae.Status != 429
+}
 
 // IsConflict riporta se err è un 409.
 func IsConflict(err error) bool {
@@ -120,12 +180,18 @@ func IsConflict(err error) bool {
 // Un 409 per base vecchia o cancellazione di massa NON è un lock perso.
 func IsLockLost(err error) bool {
 	var ae *APIError
-	if !errors.As(err, &ae) || ae.Status != 409 || ae.Code == "mass_delete" {
+	if !errors.As(err, &ae) || ae.Status != 409 {
 		return false
 	}
-	// code "locked" dagli hub recenti; il testo resta come ripiego per hub più
-	// vecchi (in entrambe le lingue i messaggi di lock contengono "lock")
-	return ae.Code == "locked" || ae.Holder != nil || strings.Contains(strings.ToLower(ae.Msg), "lock")
+	if ae.Code == CodeLocked || ae.Holder != nil {
+		return true
+	}
+	if ae.Code != "" {
+		return false // stale_base, mass_delete…: conflitti che non riguardano il lock
+	}
+	// il testo resta come ripiego per hub più vecchi (in entrambe le lingue i
+	// messaggi di lock contengono "lock")
+	return strings.Contains(strings.ToLower(ae.Msg), "lock")
 }
 
 // Timeout di rete. Il client HTTP non ha un timeout globale (i blob possono
@@ -154,9 +220,21 @@ type Client struct {
 	IdleTimeout time.Duration
 }
 
+// hubProxy decide il proxy per le chiamate all'hub. Di default nessuno:
+// l'hub sta sulla rete ZeroTier e ci riconosce dall'indirizzo IP di origine,
+// quindi un HTTP_PROXY di sistema (aziendale, di un antivirus) faceva arrivare
+// le richieste dall'IP del proxy e l'hub non ci riconosceva più. Chi ne ha
+// davvero bisogno lo riattiva con MINESYNC_USE_PROXY=1.
+func hubProxy() func(*http.Request) (*url.URL, error) {
+	if os.Getenv("MINESYNC_USE_PROXY") == "1" {
+		return http.ProxyFromEnvironment
+	}
+	return nil
+}
+
 func New(base string) *Client {
 	tr := &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
+		Proxy:                 hubProxy(),
 		DialContext:           (&net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second}).DialContext,
 		TLSHandshakeTimeout:   tlsHandshakeTimeout,
 		ResponseHeaderTimeout: responseHeaderTimeout,
@@ -357,6 +435,8 @@ type ManifestResp struct {
 	Gen   int      `json:"gen"`
 	Head  int      `json:"head"`
 	Files Manifest `json:"files"`
+	// Digest della generazione Gen ("" dagli hub precedenti alla 3.2).
+	Digest string `json:"digest,omitempty"`
 }
 
 func (c *Client) Manifest(ctx context.Context, id string, gen int) (ManifestResp, error) {
@@ -461,20 +541,83 @@ type PushBeginResp struct {
 	Missing []string `json:"missing"`
 }
 
+// PushBeginReq è il corpo di push/begin.
+type PushBeginReq struct {
+	Parent int `json:"parent"`
+	// ParentDigest: digest della generazione Parent come la conosce il
+	// client ("" = ignoto, non inviato). L'hub ≥3.2 rifiuta con 409
+	// stale_base se la sua generazione Parent è un'altra.
+	ParentDigest string   `json:"parentDigest,omitempty"`
+	Message      string   `json:"message"`
+	Files        Manifest `json:"files"`
+	Corrupt      []string `json:"corrupt"`
+	Session      string   `json:"session"`
+	NoLock       bool     `json:"-"`
+}
+
+// beginCap: tetto assoluto di una push/begin (il resto lo sorveglia il
+// watchdog di progresso). Un manifest di un modpack grande pesa decine di MB
+// in JSON: i 30 s fissi di prima non bastavano su un uplink lento.
+const beginCap = 15 * time.Minute
+
 // PushBegin apre una sessione di push. session è l'id della sessione di lock
 // del chiamante: l'hub lega il push a quel lock e al commit ricontrolla che
 // sia ancora valido. nolock=true (solo admin) pusha senza lock.
 func (c *Client) PushBegin(ctx context.Context, id string, parent int, message string, files Manifest, corrupt []string, session string, nolock bool) (PushBeginResp, error) {
+	return c.BeginPush(ctx, id, PushBeginReq{Parent: parent, Message: message, Files: files,
+		Corrupt: corrupt, Session: session, NoLock: nolock})
+}
+
+// BeginPush è PushBegin con tutte le opzioni. Il corpo viaggia compresso
+// (Content-Encoding: gzip): un manifest è JSON ripetitivo e si riduce di
+// 5-10 volte. Un hub precedente alla 3.2 non lo capisce e risponde 400 senza
+// codice: in quel caso si riprova una volta in chiaro.
+func (c *Client) BeginPush(ctx context.Context, id string, r PushBeginReq) (PushBeginResp, error) {
 	path := "/spaces/" + id + "/push/begin"
-	if nolock {
+	if r.NoLock {
 		path += "?nolock=1"
 	}
-	var out PushBeginResp
-	err := c.doJSON(ctx, "POST", path, map[string]any{
-		"parent": parent, "message": message, "files": files, "corrupt": corrupt,
-		"session": session,
-	}, &out)
+	raw, err := json.Marshal(r)
+	if err != nil {
+		return PushBeginResp{}, err
+	}
+	var zb bytes.Buffer
+	zw := gzip.NewWriter(&zb)
+	zw.Write(raw)
+	if err := zw.Close(); err != nil {
+		return PushBeginResp{}, err
+	}
+	out, err := c.postBody(ctx, path, zb.Bytes(), true)
+	if ae, ok := asAPIError(err); ok && ae.Status == 400 && ae.Code == "" {
+		out, err = c.postBody(ctx, path, raw, false)
+	}
 	return out, err
+}
+
+// postBody invia un corpo JSON (eventualmente già compresso) sorvegliato dal
+// watchdog di progresso, con un tetto assoluto generoso.
+func (c *Client) postBody(ctx context.Context, path string, body []byte, gzipped bool) (PushBeginResp, error) {
+	var out PushBeginResp
+	cctx, cancel := context.WithTimeout(ctx, beginCap)
+	defer cancel()
+	wctx, wd := startWatchdog(cctx, c.idleTimeout())
+	defer wd.done()
+	req, err := c.req(wctx, "POST", path, &touchReader{r: bytes.NewReader(body), wd: wd})
+	if err != nil {
+		return out, err
+	}
+	req.ContentLength = int64(len(body))
+	req.Header.Set("Content-Type", "application/json")
+	if gzipped {
+		req.Header.Set("Content-Encoding", "gzip")
+	}
+	res, err := c.HC.Do(req)
+	if err != nil {
+		return out, netError(explain(wctx, err))
+	}
+	defer res.Body.Close()
+	wd.touch()
+	return out, explain(wctx, decodeResponse(res, &out))
 }
 
 // UploadBlob carica un blob. Con gzipped=true r fornisce byte già compressi

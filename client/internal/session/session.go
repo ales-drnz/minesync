@@ -4,10 +4,12 @@
 package session
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"minesync/client/internal/api"
@@ -67,6 +69,10 @@ const (
 	EvSaved  // autosave+push completato
 	EvLaunch // pull fatto, server in avvio: Java, script e porta effettivi
 	EvDone   // sessione finita (Err eventuale)
+	// EvUpload: stato dell'upload in background di un autosave. Uploading
+	// vero con Progress durante l'upload, falso alla fine (riuscito o no);
+	// HubSavedAt dice a quando risale lo stato che l'hub ha davvero.
+	EvUpload
 )
 
 // Event è una notifica della sessione verso la UI.
@@ -86,12 +92,39 @@ type Event struct {
 	// EvLaunch: come viene avviato davvero il server, deciso DOPO il pull
 	// (prima la cartella può essere vuota e la UI non ha di che giudicare)
 	Java, Script, Port string
+	// HubSavedAt (EvSaved, EvUpload): istante dello stato del mondo che
+	// l'hub ha davvero (lo snapshot dell'ultimo autosave arrivato, o il
+	// pull/push). Zero = ancora ignoto. La UI ne mostra l'età
+	// ("sull'hub: 7 min fa").
+	HubSavedAt time.Time
+	// Uploading (EvUpload): un autosave sta salendo sull'hub in background.
+	Uploading bool
 }
 
 // ErrLockLost: il lock dello spazio non è più nostro (forzato da un altro,
 // scaduto durante un'assenza di rete). La sessione ferma il server e non
 // pusha: il mondo resta solo sul disco locale.
 var ErrLockLost = i18n.NewError("lock perso")
+
+// ErrSpaceGone: lo spazio è stato cancellato dall'hub durante la sessione. La
+// sessione ferma il server e non pusha (non c'è più dove): il mondo resta sul
+// disco locale.
+var ErrSpaceGone = i18n.NewError("spazio cancellato dall'hub")
+
+// LockActionPlay è il valore di "action" nelle info del lock di una
+// sessione di gioco (C2): l'hub annuncia apertura e chiusura solo per questi.
+const LockActionPlay = "play"
+
+// PlayLockInfo prepara le info del lock di una sessione di gioco: quelle
+// date (es. "host") più "action": "play". Da passare a api.LockAcquire.
+func PlayLockInfo(extra map[string]string) map[string]string {
+	info := make(map[string]string, len(extra)+1)
+	for k, v := range extra {
+		info[k] = v
+	}
+	info["action"] = LockActionPlay
+	return info
+}
 
 // Default della sessione (esportati: la TUI li mostra e li usa nei countdown).
 const (
@@ -108,9 +141,25 @@ const (
 const (
 	closeIdleKill = 90 * time.Second
 	closeHardKill = 15 * time.Minute
-	// attesa della conferma di salvataggio: si riarma a ogni riga di
-	// avanzamento, quindi su mondi grandi non scade a metà lavoro
-	flushWait = 60 * time.Second
+)
+
+// Autosave. Variabili (non costanti) solo per i test.
+var (
+	// flushWait: attesa della conferma di salvataggio; si riarma a ogni
+	// riga di avanzamento ("Saving…"), quindi su mondi grandi non scade a
+	// metà lavoro, ma mai oltre flushHardCap dall'invio del flush.
+	flushWait    = 60 * time.Second
+	flushHardCap = 10 * time.Minute
+	// quiete: dopo la conferma si aspetta che i file smettano di cambiare
+	// (Cobblemon, CobbleDollars & co. scrivono anche in save-off) per
+	// quiesceStable di fila, al massimo quiesceCap, controllando ogni
+	// quiescePoll.
+	quiesceStable = 5 * time.Second
+	quiesceCap    = 30 * time.Second
+	quiescePoll   = time.Second
+	// upload in background: pochi worker, banda limitata (vedi
+	// syncx.Engine.UploadLimit)
+	bgWorkers = 2
 )
 
 // Config di una sessione.
@@ -130,6 +179,9 @@ type Config struct {
 	// DiscardLocal: il pull iniziale scarta le modifiche locali non pushate
 	// (con backup) invece di fermarsi con un DirtyLocalError divergente.
 	DiscardLocal bool
+	// UploadLimitKBps: banda degli autosave in background (KB/s); 0 =
+	// automatica, <0 = nessun limite (vedi config.Config.UploadLimitKBps).
+	UploadLimitKBps int
 }
 
 // Session orchestra lock-heartbeat, pull, processo Java, autosave e push.
@@ -151,6 +203,17 @@ type Session struct {
 	emptySince time.Time     // da quando il server è senza giocatori
 	ready      bool          // server Minecraft avviato (abilita il test porta)
 	reachable  *bool         // esito test porta dall'hub (nil = non ancora noto)
+	spaceGone  bool          // lo spazio non esiste più sull'hub
+	hubSavedAt time.Time     // istante dello stato che l'hub ha davvero
+	uploading  bool          // autosave in upload in background
+	// cycleCancel annulla il ciclo di autosave in corso (snapshot o upload):
+	// lo stop non aspetta un upload lento.
+	cycleCancel context.CancelFunc
+	bg          atomic.Bool // il progresso in arrivo è dell'upload in background
+
+	// launchOverride sostituisce rilevamento dello script e scelta di Java
+	// (solo test: un finto server).
+	launchOverride func() (mc.ServerInfo, string, error)
 }
 
 // New prepara una sessione (senza avviarla).
@@ -181,11 +244,37 @@ func New(cfg Config) *Session {
 		Client: cfg.Client, SpaceID: cfg.SpaceID,
 		LocalPath: cfg.LocalPath, CachePath: cfg.CachePath,
 		Matcher:      syncx.NewMatcher(cfg.Ignore),
-		Report:       func(p syncx.Progress) { s.emit(Event{Kind: EvProgress, Progress: p}) },
+		Report:       s.report,
+		Warn:         s.warn,
 		LockSession:  cfg.LockSession,
 		DiscardLocal: cfg.DiscardLocal,
 	}
 	return s
+}
+
+// report inoltra il progresso dell'engine: quello dell'upload in background
+// diventa EvUpload (la UI non deve scambiarlo per un push in primo piano).
+func (s *Session) report(p syncx.Progress) {
+	if s.bg.Load() {
+		s.emit(Event{Kind: EvUpload, Progress: p, Uploading: true, HubSavedAt: s.HubSavedAt()})
+		return
+	}
+	s.emit(Event{Kind: EvProgress, Progress: p})
+}
+
+// HubSavedAt: istante dello stato del mondo che l'hub ha davvero (zero =
+// ignoto).
+func (s *Session) HubSavedAt() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.hubSavedAt
+}
+
+// Uploading: un autosave sta salendo sull'hub in background.
+func (s *Session) Uploading() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.uploading
 }
 
 // Events è il canale da consumare nella UI.
@@ -308,11 +397,17 @@ func (s *Session) SetAutoStop(d time.Duration) {
 }
 
 // RequestStop avvia lo spegnimento pulito (stop → push finale → release).
+// Un autosave in corso viene annullato: i blob già caricati restano
+// sull'hub, e il push finale (dai file veri, a server spento) non li
+// ricarica.
 func (s *Session) RequestStop() {
 	s.mu.Lock()
-	sup, already := s.sup, s.stopReq
+	sup, already, cancel := s.sup, s.stopReq, s.cycleCancel
 	s.stopReq = true
 	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 	if already {
 		return
 	}
