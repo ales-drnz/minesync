@@ -119,8 +119,10 @@ func (s *Server) handle(req []byte, src net.IP) []byte {
 	}
 	id := core[1]
 
-	lk, err := s.store.CurrentLock(id)
-	if err != nil { // lo spazio non esiste
+	// istantanea del lock: il DNS non prende mai il mutex dello spazio (un
+	// commit o una pulizia lunghi non devono rallentare le risposte)
+	lk, exists := s.store.LockSnapshot(id)
+	if !exists { // lo spazio non esiste
 		m.rcode = rcodeNXDomain
 		return m.finalize(s.zone)
 	}
@@ -151,7 +153,7 @@ func (s *Server) handle(req []byte, src net.IP) []byte {
 // hostAddrs estrae gli IPv4 pubblicati dall'host (nell'ordine del client:
 // ZeroTier per primo, poi LAN) e la porta dal lock, solo se il lock è vivo.
 func hostAddrs(lk *store.LockInfo) (ips []net.IP, port int, ok bool) {
-	if lk == nil || lk.Stale(time.Now().UTC()) {
+	if lk == nil || lk.Stale(time.Now()) {
 		return nil, 0, false
 	}
 	host := lk.Info["host"]

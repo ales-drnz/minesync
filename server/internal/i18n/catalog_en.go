@@ -115,7 +115,37 @@ var catalogEN = map[string]string{
 
 	"%w: parent %d ma HEAD è %d (qualcuno ha pushato prima di te: fai pull)": "%w: parent %d but HEAD is %d (someone pushed before you: pull first)",
 
-	"%w: percorso non valido %q": "%w: invalid path %q",
+	"percorso non valido (o non valido su Windows): %q": "invalid path (or invalid on Windows): %q",
+
+	"percorso %q duplicato di %q a meno di maiuscole/minuscole: su Windows sarebbero lo stesso file": "path %q duplicates %q except for letter case: on Windows they would be the same file",
+
+	"la generazione %d da cui parte il tuo push non è quella dell'hub (hub ripristinato o spazio ricreato): scarica prima la versione dell'hub": "generation %d your push starts from is not the hub's (hub restored or space recreated): download the hub's version first",
+
+	"lo spazio %s non esiste più (eliminato dall'hub): la sessione è finita": "space %s no longer exists (deleted from the hub): the session is over",
+
+	"l'hub ha il disco pieno: %s liberi, ne servono almeno %s. Avvisa chi gestisce l'hub": "the hub's disk is full: %s free, at least %s needed. Tell whoever runs the hub",
+
+	"%w: pulizia già in corso su questo spazio, riprova tra poco": "%w: a cleanup is already running on this space, try again shortly",
+
+	"dimensione non valida: %q": "invalid size: %q",
+
+	"unità non valida: %q": "invalid unit: %q",
+
+	"store: lock di %s non salvato: %v": "store: lock of %s not saved: %v",
+
+	"ATTENZIONE: disco dei dati quasi pieno (%s liberi, soglia %s): push, upload e lock sono rifiutati": "WARNING: data disk almost full (%s free, threshold %s): pushes, uploads and locks are refused",
+
+	"⚠ disco dell'hub quasi pieno: %s liberi (soglia %s), push e nuove sessioni sono sospesi": "⚠ hub disk almost full: %s free (threshold %s), pushes and new sessions are suspended",
+
+	"MINESYNC_ZTNET_GRACE non valido (%q): uso %s": "invalid MINESYNC_ZTNET_GRACE (%q): using %s",
+
+	"MINESYNC_MIN_FREE non valido (%q): uso max(1 GiB, 2%% del disco)": "invalid MINESYNC_MIN_FREE (%q): using max(1 GiB, 2%% of the disk)",
+
+	"disco dei dati: %s liberi su %s (soglia minima %s)": "data disk: %s free of %s (minimum threshold %s)",
+
+	"ztauth: ZTNET di nuovo raggiungibile (%d indirizzi membri)": "ztauth: ZTNET reachable again (%d member addresses)",
+
+	"ztauth: ZTNET irraggiungibile (%v): continuo a riconoscere i membri già noti (%d indirizzi)": "ztauth: ZTNET unreachable (%v): still recognizing the members already known (%d addresses)",
 
 	"%w: chunk non valido per %q": "%w: invalid chunk for %q",
 
@@ -289,8 +319,6 @@ var catalogEN = map[string]string{
 	"minesync-hub arrestato": "minesync-hub stopped",
 
 	"export %s gen %d interrotto: %v": "export %s gen %d aborted: %v",
-
-	"ztauth: aggiornamento membri fallito: %v": "ztauth: member refresh failed: %v",
 
 	"store: ATTENZIONE, %s non ha space.json: ignorata": "store: WARNING, %s has no space.json: ignored",
 

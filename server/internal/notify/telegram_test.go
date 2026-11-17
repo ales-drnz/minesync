@@ -25,7 +25,14 @@ type fakeTG struct {
 	polls     atomic.Int64
 	sendCode  atomic.Int64 // status di sendMessage (0 = 200)
 	deadTopic atomic.Int64 // topic eliminato: sendMessage lì risponde "message thread not found"
+	// throttle: quante risposte 429 dare ancora, con retry_after = retryAfter secondi
+	throttle   atomic.Int64
+	retryAfter atomic.Int64
+	sends      atomic.Int64 // chiamate a sendMessage (anche rifiutate)
 }
+
+// playInfo: le info del lock di una sessione di gioco (client 3.2).
+func playInfo() map[string]string { return map[string]string{"action": "play"} }
 
 // sent: un messaggio ricevuto; thread = message_thread_id (0 = assente).
 type sent struct {
@@ -58,6 +65,13 @@ func newFakeTG(t *testing.T) *fakeTG {
 			default:
 				w.Write([]byte(`{"ok":true,"result":[]}`)) // nessun comando
 			}
+			return
+		}
+		f.sends.Add(1)
+		if f.throttle.Add(-1) >= 0 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprintf(w, `{"ok":false,"error_code":429,"description":"Too Many Requests: retry after %d","parameters":{"retry_after":%d}}`,
+				f.retryAfter.Load(), f.retryAfter.Load())
 			return
 		}
 		if c := f.sendCode.Load(); c != 0 {
@@ -157,6 +171,7 @@ func setup(t *testing.T) (*store.Store, *events.Bus, *Telegram, *fakeTG) {
 	f := newFakeTG(t)
 	tg := New("internal", st, bus)
 	tg.base = f.URL
+	tg.coalesce = 0 // chiusure annunciate subito (i test del raggruppamento lo alzano)
 	tg.Apply(fullCfg())
 	return st, bus, tg, f
 }
@@ -195,7 +210,7 @@ func TestApreEChiude(t *testing.T) {
 // lo stesso quando il lock scade.
 func TestClientSparito(t *testing.T) {
 	st, _, tg, f := setup(t)
-	if _, _, err := st.AcquireLock("miomondo", "steve", nil, 1); err != nil {
+	if _, _, err := st.AcquireLock("miomondo", "steve", playInfo(), 1); err != nil {
 		t.Fatal(err)
 	}
 	tg.adopt()
@@ -215,7 +230,7 @@ func TestClientSparito(t *testing.T) {
 // Un riavvio dell'hub non deve riannunciare un server già aperto.
 func TestRiavvioHubNonRiannuncia(t *testing.T) {
 	st, _, tg, f := setup(t)
-	if _, _, err := st.AcquireLock("miomondo", "steve", nil, 90); err != nil {
+	if _, _, err := st.AcquireLock("miomondo", "steve", playInfo(), 90); err != nil {
 		t.Fatal(err)
 	}
 	tg.adopt()
@@ -276,7 +291,7 @@ func TestStatusMsg(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.HeartbeatLock("miomondo", lk.Session, []string{"alex", "bob"}, false); err != nil {
+	if _, err := st.HeartbeatLock("miomondo", lk.Session, "", []string{"alex", "bob"}, false); err != nil {
 		t.Fatal(err)
 	}
 	msg := tg.statusMsg(nil)
@@ -292,7 +307,7 @@ func TestStatusMsg(t *testing.T) {
 // successivo riarma il watchdog.
 func TestPushWatchdog(t *testing.T) {
 	st, _, tg, f := setup(t)
-	if _, _, err := st.AcquireLock("miomondo", "steve", nil, 90); err != nil {
+	if _, _, err := st.AcquireLock("miomondo", "steve", playInfo(), 90); err != nil {
 		t.Fatal(err)
 	}
 	tg.adopt()

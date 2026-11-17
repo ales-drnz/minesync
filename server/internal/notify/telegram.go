@@ -132,6 +132,16 @@ type Telegram struct {
 	out    chan outMsg
 	reconf chan struct{}
 	open   map[string]session // solo dalla goroutine di Run
+	// pending: chiusure in attesa (solo dalla goroutine di Run). Una chiusura
+	// si annuncia dopo coalesce: se nel frattempo lo stesso host riapre (riavvio
+	// del server) o il lock torna vivo, non parte nessun messaggio.
+	pending  map[string]pendingClose
+	coalesce time.Duration
+
+	// invii: attesa tra i tentativi (se Telegram non dice retry_after) e
+	// tetto al tempo totale speso a riprovare un messaggio
+	backoff     time.Duration
+	retryBudget time.Duration
 
 	mu        sync.Mutex
 	cfg       Config
@@ -141,24 +151,48 @@ type Telegram struct {
 	lastSent  time.Time
 }
 
+// session è un server aperto annunciato (o adottato al riavvio).
 type session struct {
 	owner      string
-	since      time.Time
+	since      time.Time // Since del lock: identifica la sessione di lock
+	start      time.Time // inizio mostrato (resta quello vero se si riapre subito)
 	lastPush   time.Time // ultimo push visto (all'apertura: l'apertura stessa)
 	pushWarned bool      // avviso "non salva più" già mandato per questa sessione
 }
+
+// pendingClose è una chiusura non ancora annunciata.
+type pendingClose struct {
+	s   session
+	why string
+	at  time.Time // quando il server si è chiuso
+}
+
+const (
+	defaultCoalesce    = time.Minute      // chiusura+riapertura entro questo tempo: silenzio
+	defaultBackoff     = 2 * time.Second  // attesa base tra i tentativi di invio
+	defaultRetryBudget = 90 * time.Second // tempo massimo speso a riprovare un messaggio
+	pendingCheck       = 5 * time.Second  // ogni quanto si guardano le chiusure in attesa
+)
 
 // New crea il bot, spento: la configurazione arriva con Apply.
 func New(zone string, st *store.Store, bus *events.Bus) *Telegram {
 	return &Telegram{
 		zone: zone, st: st, bus: bus,
-		hc:     &http.Client{Timeout: 15 * time.Second},
-		base:   apiBase,
-		out:    make(chan outMsg, 64),
-		reconf: make(chan struct{}, 1),
-		open:   map[string]session{},
+		hc:          &http.Client{Timeout: 15 * time.Second},
+		base:        apiBase,
+		out:         make(chan outMsg, 64),
+		reconf:      make(chan struct{}, 1),
+		open:        map[string]session{},
+		pending:     map[string]pendingClose{},
+		coalesce:    defaultCoalesce,
+		backoff:     defaultBackoff,
+		retryBudget: defaultRetryBudget,
 	}
 }
+
+// announceable: si annunciano solo le sessioni di gioco (info action
+// "play", o dai client 3.1 un lock con "host"), mai i push manuali.
+func announceable(lk *store.LockInfo) bool { return lk != nil && lk.Action() == "play" }
 
 // Apply cambia la configurazione a caldo: i messaggi successivi seguono la
 // nuova, il poller di /status si ferma o riparte se serve.
@@ -255,6 +289,8 @@ func (t *Telegram) Run(ctx context.Context) {
 	defer t.bus.Unsubscribe(ch)
 	tick := time.NewTicker(staleCheck)
 	defer tick.Stop()
+	pend := time.NewTicker(pendingCheck)
+	defer pend.Stop()
 
 	for {
 		select {
@@ -267,6 +303,8 @@ func (t *Telegram) Run(ctx context.Context) {
 		case <-tick.C:
 			t.sweepStale()
 			t.sweepPushWatchdog()
+		case <-pend.C:
+			t.flushPending(time.Now())
 		}
 	}
 }
@@ -275,8 +313,8 @@ func (t *Telegram) Run(ctx context.Context) {
 // dell'hub non fa ripartire l'annuncio di apertura né perde la chiusura.
 func (t *Telegram) adopt() {
 	for _, sp := range t.st.ListSpaces() {
-		if lk, err := t.st.CurrentLock(sp.ID); err == nil && lk != nil {
-			t.open[sp.ID] = session{owner: lk.Owner, since: lk.Since, lastPush: time.Now()}
+		if lk, err := t.st.CurrentLock(sp.ID); err == nil && announceable(lk) {
+			t.open[sp.ID] = session{owner: lk.Owner, since: lk.Since, start: lk.Since, lastPush: time.Now()}
 		}
 	}
 }
@@ -288,10 +326,7 @@ func (t *Telegram) handle(e events.Event) {
 		if err != nil || lk == nil {
 			return
 		}
-		t.open[e.Space] = session{owner: lk.Owner, since: lk.Since, lastPush: time.Now()}
-		if t.config().wants(kindOpen) {
-			t.queue(kindOpen, e.Space, t.openMsg(e.Space, lk))
-		}
+		t.opened(e.Space, lk)
 	case "push":
 		if s, was := t.open[e.Space]; was {
 			s.lastPush = time.Now()
@@ -299,13 +334,85 @@ func (t *Telegram) handle(e events.Event) {
 			t.open[e.Space] = s
 		}
 	case "unlock", "force":
-		s, was := t.open[e.Space]
-		if !was {
-			return
+		t.closed(e.Space, "")
+	case "space":
+		// spazio eliminato: la sessione aperta si dimentica (l'eliminazione
+		// è possibile solo senza lock vivi, quindi il server era già chiuso)
+		if del, _ := e.Data["deleted"].(bool); del {
+			delete(t.open, e.Space)
 		}
-		delete(t.open, e.Space)
-		t.queue(kindClose, e.Space, t.closeMsg(e.Space, s, ""))
+	case "disk":
+		t.queueThread(kindAlert, 0, "", e.Localized(t.lang()).Msg)
 	}
+}
+
+// opened registra un lock vivo di gioco e, se serve, annuncia l'apertura.
+// Idempotente per sessione di lock: lo chiamano sia l'evento "lock" sia la
+// sorveglianza periodica (che vede anche i lock resuscitati da un heartbeat).
+func (t *Telegram) opened(id string, lk *store.LockInfo) {
+	if !announceable(lk) {
+		return // push manuale o lock sconosciuto: non è un server aperto
+	}
+	now := time.Now()
+	if s, ok := t.open[id]; ok {
+		if s.since.Equal(lk.Since) {
+			return // già annunciato
+		}
+		// la sessione precedente è finita senza che ce ne accorgessimo
+		delete(t.open, id)
+		t.flushClose(id, pendingClose{s: s, at: now})
+	}
+	if p, ok := t.pending[id]; ok {
+		delete(t.pending, id)
+		switch {
+		case p.s.since.Equal(lk.Since):
+			// lo stesso lock, tornato vivo con un heartbeat prima che la
+			// chiusura partisse: per il gruppo non è mai stato chiuso
+			t.open[id] = p.s
+			return
+		case p.s.owner == lk.Owner && now.Sub(p.at) <= t.coalesce:
+			// chiuso e riaperto subito dallo stesso host (riavvio del server):
+			// nessun messaggio, la sessione continua con la durata vera
+			s := p.s
+			s.since, s.lastPush, s.pushWarned = lk.Since, now, false
+			t.open[id] = s
+			return
+		default:
+			t.flushClose(id, p) // chiusura vera: va detta prima della nuova apertura
+		}
+	}
+	t.open[id] = session{owner: lk.Owner, since: lk.Since, start: lk.Since, lastPush: now}
+	t.queue(kindOpen, id, t.openMsg(id, lk))
+}
+
+// closed segna la fine di una sessione aperta: l'annuncio parte dopo
+// t.coalesce, se nel frattempo non riapre.
+func (t *Telegram) closed(id, why string) {
+	s, ok := t.open[id]
+	if !ok {
+		return
+	}
+	delete(t.open, id)
+	p := pendingClose{s: s, why: why, at: time.Now()}
+	if t.coalesce <= 0 {
+		t.flushClose(id, p)
+		return
+	}
+	t.pending[id] = p
+}
+
+// flushPending annuncia le chiusure in attesa da almeno t.coalesce.
+func (t *Telegram) flushPending(now time.Time) {
+	for id, p := range t.pending {
+		if now.Sub(p.at) >= t.coalesce {
+			delete(t.pending, id)
+			t.flushClose(id, p)
+		}
+	}
+}
+
+func (t *Telegram) flushClose(id string, p pendingClose) {
+	t.queue(kindClose, id, t.closeMsg(id, p.s, p.why, p.at))
 }
 
 // sweepPushWatchdog avvisa (una volta per sessione) se un server è aperto,
@@ -318,7 +425,7 @@ func (t *Telegram) sweepPushWatchdog() {
 			continue
 		}
 		lk, err := t.st.CurrentLock(id)
-		if err != nil || lk == nil || lk.Stale(now.UTC()) {
+		if err != nil || lk == nil || lk.Stale(now) {
 			continue // chiuso o stale: ci pensa sweepStale
 		}
 		// a avvisi spenti la sessione non si marca: se li si riaccende,
@@ -332,22 +439,33 @@ func (t *Telegram) sweepPushWatchdog() {
 	}
 }
 
-// sweepStale chiude i server il cui client ha smesso di battere il cuore.
+// sweepStale chiude i server il cui client ha smesso di battere il cuore, e
+// riprende quelli il cui lock è tornato vivo (un heartbeat dopo una lunga
+// pausa resuscita il lock stale: la chiusura successiva va annunciata) o
+// il cui evento di apertura si è perso.
 func (t *Telegram) sweepStale() {
-	now := time.Now().UTC()
+	now := time.Now()
 	for id, s := range t.open {
 		lk, err := t.st.CurrentLock(id)
 		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				delete(t.open, id) // spazio eliminato: niente da annunciare
+			}
 			continue
 		}
 		switch {
-		case lk == nil: // rilasciato senza che passassimo dall'evento
-			delete(t.open, id)
-			t.queue(kindClose, id, t.closeMsg(id, s, ""))
+		case lk == nil || !lk.Since.Equal(s.since): // rilasciato senza che passassimo dall'evento
+			t.closed(id, "")
 		case lk.Stale(now):
-			delete(t.open, id)
-			t.queue(kindClose, id, t.closeMsg(id, s, t.trf("il client di %s non risponde più", esc(s.owner))))
+			t.closed(id, t.trf("il client di %s non risponde più", esc(s.owner)))
 		}
+	}
+	for _, sp := range t.st.ListSpaces() {
+		lk, err := t.st.CurrentLock(sp.ID)
+		if err != nil || lk == nil || lk.Stale(now) {
+			continue
+		}
+		t.opened(sp.ID, lk)
 	}
 }
 
@@ -481,7 +599,7 @@ func spacesOfTopic(c Config, thread int64) map[string]bool {
 // statusMsg fotografa lo stato dei server: la risposta a /status. only
 // limita agli spazi indicati (nil = tutti).
 func (t *Telegram) statusMsg(only map[string]bool) string {
-	now := time.Now().UTC()
+	now := time.Now()
 	lines := []string{t.tr("📊 <b>Stato dei server</b>")}
 	spaces := t.st.ListSpaces()
 	if only != nil {
@@ -500,7 +618,8 @@ func (t *Telegram) statusMsg(only map[string]bool) string {
 		if err != nil {
 			continue
 		}
-		if lk == nil || lk.Stale(now) {
+		// un push manuale tiene il lock ma non apre il server
+		if lk == nil || lk.Stale(now) || !announceable(lk) {
 			lines = append(lines, t.trf("⚪ <b>%s</b> — chiuso", esc(sp.Name)))
 			continue
 		}
@@ -545,12 +664,13 @@ func (t *Telegram) openMsg(id string, lk *store.LockInfo) string {
 	return strings.Join(lines, "\n")
 }
 
-func (t *Telegram) closeMsg(id string, s session, why string) string {
+// closeMsg: end è quando il server si è chiuso (l'annuncio può partire dopo).
+func (t *Telegram) closeMsg(id string, s session, why string, end time.Time) string {
 	lines := []string{t.trf("🔴 <b>%s</b> è chiuso", esc(t.name(id)))}
 	if why != "" {
 		lines = append(lines, "⚠️ "+why)
 	}
-	if d := dur(time.Since(s.since)); d != "" {
+	if d := dur(end.Sub(s.start)); d != "" {
 		lines = append(lines, t.trf("⏱ sessione di %s", d))
 	}
 	return strings.Join(lines, "\n")
@@ -631,8 +751,11 @@ func (t *Telegram) sender(ctx context.Context) {
 	}
 }
 
+// send manda un messaggio, riprovando gli errori transitori: rispetta il
+// retry_after di Telegram (429) e non spende più di t.retryBudget in tutto.
 func (t *Telegram) send(ctx context.Context, m outMsg) {
 	var err error
+	start := time.Now()
 	for try := 1; ; try++ {
 		var retry bool
 		retry, err = t.sendOnce(ctx, m.token, m.chatID, m.thread, m.text)
@@ -647,10 +770,18 @@ func (t *Telegram) send(ctx context.Context, m outMsg) {
 		if !retry || try == sendTries || ctx.Err() != nil {
 			break
 		}
+		wait := time.Duration(try) * t.backoff
+		var ae *apiErr
+		if errors.As(err, &ae) && ae.retryAfter > 0 {
+			wait = ae.retryAfter // Telegram dice quanto aspettare (429)
+		}
+		if time.Since(start)+wait > t.retryBudget {
+			break // troppo: meglio perdere l'annuncio che bloccare la coda
+		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(time.Duration(try) * 2 * time.Second):
+		case <-time.After(wait):
 		}
 	}
 	err = t.redact(err, m.token)
@@ -743,7 +874,11 @@ func (t *Telegram) sendOnce(ctx context.Context, token, chatID string, thread in
 
 // apiErr è la risposta d'errore di Telegram: status e descrizione, tenuta
 // da parte per riconoscere i casi particolari (topic eliminato).
-type apiErr struct{ status, desc string }
+// retryAfter è parameters.retry_after delle risposte 429 (0 = assente).
+type apiErr struct {
+	status, desc string
+	retryAfter   time.Duration
+}
 
 func (e *apiErr) Error() string {
 	if e.desc == "" {
@@ -757,10 +892,17 @@ func (e *apiErr) Error() string {
 func apiError(resp *http.Response) (retry bool, err error) {
 	var out struct {
 		Description string `json:"description"`
+		Parameters  struct {
+			RetryAfter int `json:"retry_after"` // secondi
+		} `json:"parameters"`
 	}
 	_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&out)
 	retry = resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests
-	return retry, i18n.Errorf("telegram ha risposto %s", &apiErr{status: resp.Status, desc: strings.TrimSpace(out.Description)})
+	ae := &apiErr{status: resp.Status, desc: strings.TrimSpace(out.Description)}
+	if ra := out.Parameters.RetryAfter; ra > 0 {
+		ae.retryAfter = time.Duration(min(ra, 3600)) * time.Second
+	}
+	return retry, i18n.Errorf("telegram ha risposto %s", ae)
 }
 
 // recordSent e recordErr aggiornano lo stato solo se riguardano la

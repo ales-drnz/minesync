@@ -308,10 +308,10 @@ func TestLockLifecycle(t *testing.T) {
 		t.Fatalf("atteso LockedError redatto, avuto %v", err)
 	}
 	// heartbeat con session sbagliata
-	if _, err := s.HeartbeatLock("v", "sbagliata", nil, false); !errors.Is(err, ErrConflict) {
+	if _, err := s.HeartbeatLock("v", "sbagliata", "", nil, false); !errors.Is(err, ErrConflict) {
 		t.Fatalf("heartbeat estraneo accettato: %v", err)
 	}
-	if _, err := s.HeartbeatLock("v", lk.Session, []string{"steve", "alex"}, false); err != nil {
+	if _, err := s.HeartbeatLock("v", lk.Session, "", []string{"steve", "alex"}, false); err != nil {
 		t.Fatal(err)
 	}
 	// release con session sbagliata su lock vivo → rifiutato
@@ -422,11 +422,13 @@ func commit(s *Store, space, pid string) (GenSummary, error) {
 
 // sweepAll spazza i blob non referenziati senza potare generazioni.
 func sweepAll(s *Store, space string) (int, int64) {
-	st, _ := s.space(space)
-	st.mu.Lock()
-	defer st.mu.Unlock()
+	st, run, _, err := s.acquireGC(space, nil)
+	if err != nil {
+		panic(err)
+	}
+	defer st.endGC(run)
 	ns, _ := s.genNumbers(space)
-	res, _ := s.pruneLocked(space, st, ns, nil)
+	res, _ := s.prune(space, st, run, ns, nil)
 	return res.BlobsDeleted, res.BytesFreed
 }
 

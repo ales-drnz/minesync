@@ -29,7 +29,7 @@ func TestDisattivaERiattivaConAltraChat(t *testing.T) {
 	tg.Apply(off)
 	runBot(t, tg)
 
-	lk, _, err := st.AcquireLock("miomondo", "steve", nil, 90)
+	lk, _, err := st.AcquireLock("miomondo", "steve", playInfo(), 90)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestFlagAperturaChiusura(t *testing.T) {
 	tg.Apply(c)
 	runBot(t, tg)
 
-	lk, _, _ := st.AcquireLock("miomondo", "steve", nil, 90)
+	lk, _, _ := st.AcquireLock("miomondo", "steve", playInfo(), 90)
 	bus.Publish(events.Event{Type: "lock", Space: "miomondo", Actor: "steve"})
 	f.wantSilence(t) // aperture spente
 
@@ -64,7 +64,7 @@ func TestFlagAperturaChiusura(t *testing.T) {
 	bus.Publish(events.Event{Type: "unlock", Space: "miomondo", Actor: "steve"})
 	f.wantSilence(t) // chiusure spente
 
-	lk, _, _ = st.AcquireLock("miomondo", "steve", nil, 90)
+	lk, _, _ = st.AcquireLock("miomondo", "steve", playInfo(), 90)
 	bus.Publish(events.Event{Type: "lock", Space: "miomondo", Actor: "steve"})
 	f.want(t, "🟢", "miomondo")
 	_ = lk
@@ -77,7 +77,7 @@ func TestFlagAvvisi(t *testing.T) {
 	c := fullCfg()
 	c.Alerts = false
 	tg.Apply(c)
-	if _, _, err := st.AcquireLock("miomondo", "steve", nil, 90); err != nil {
+	if _, _, err := st.AcquireLock("miomondo", "steve", playInfo(), 90); err != nil {
 		t.Fatal(err)
 	}
 	tg.adopt()

@@ -66,6 +66,25 @@ func writeJSON(path string, v any) error {
 	return writeFileAtomic(path, b)
 }
 
+// readJSONStat è readJSON che restituisce anche i metadati del file letto
+// (dallo stesso descrittore: combaciano col contenuto).
+func readJSONStat(path string, v any) (os.FileInfo, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	b, err := io.ReadAll(f)
+	if err != nil {
+		return nil, err
+	}
+	return fi, json.Unmarshal(b, v)
+}
+
 func readJSON(path string, v any) error {
 	b, err := os.ReadFile(path)
 	if err != nil {

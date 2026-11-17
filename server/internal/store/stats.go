@@ -97,12 +97,12 @@ func (s *Store) accrueStatsLocked(id string, st *spaceState, owner string, playe
 	sec := int64(delta.Seconds())
 	h := ss.Hosts[owner]
 	h.Seconds += sec
-	h.LastSeen = now
+	h.LastSeen = now.UTC()
 	ss.Hosts[owner] = h
 	for _, p := range players {
 		ps := ss.Players[p]
 		ps.Seconds += sec
-		ps.LastSeen = now
+		ps.LastSeen = now.UTC()
 		ss.Players[p] = ps
 	}
 	if now.Sub(st.statsSaved) > statsWriteEvery {
@@ -116,7 +116,7 @@ func (s *Store) closeSessionLocked(id string, st *spaceState, owner string, sinc
 		return // sessioni lampo: rumore, non storia
 	}
 	ss := s.statsLocked(id, st)
-	ss.Sessions = append(ss.Sessions, SessionStat{Owner: owner, Since: since, Until: until})
+	ss.Sessions = append(ss.Sessions, SessionStat{Owner: owner, Since: since.UTC(), Until: until.UTC()})
 	if len(ss.Sessions) > statsKeepSessions {
 		ss.Sessions = ss.Sessions[len(ss.Sessions)-statsKeepSessions:]
 	}
@@ -125,8 +125,11 @@ func (s *Store) closeSessionLocked(id string, st *spaceState, owner string, sinc
 
 // Flush salva su disco le statistiche in sospeso di tutti gli spazi e
 // aspetta che finiscano le operazioni in corso (prende ogni lock di spazio):
-// da chiamare allo spegnimento dell'hub.
+// da chiamare allo spegnimento dell'hub. Le pulizie in background si
+// fermano al primo punto sicuro (rimandate al prossimo avvio).
 func (s *Store) Flush() {
+	s.closing.Store(true)
+	s.gcWG.Wait()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for id, st := range s.spaces {

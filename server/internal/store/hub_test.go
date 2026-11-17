@@ -50,7 +50,7 @@ func TestConcurrentStatsHeartbeat(t *testing.T) {
 				return
 			default:
 			}
-			got, err := s.HeartbeatLock("v", lk.Session, []string{fmt.Sprintf("p%d", i%50), "alex"}, true)
+			got, err := s.HeartbeatLock("v", lk.Session, "", []string{fmt.Sprintf("p%d", i%50), "alex"}, true)
 			if err != nil {
 				t.Error(err)
 				return
@@ -225,8 +225,8 @@ func TestPushLockBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// sessione sbagliata o mancante, utente sbagliato
-	for _, c := range []struct{ who, sess string }{{"alex", ""}, {"alex", "altra"}, {"steve", lk.Session}} {
+	// sessione sbagliata o mancante (il nome non conta: vedi TestLockSessionIsAuthority)
+	for _, c := range []struct{ who, sess string }{{"alex", ""}, {"alex", "altra"}, {"steve", ""}} {
 		if _, err := push(c.who, c.sess); !errors.As(err, &le) {
 			t.Fatalf("push %+v accettato: %v", c, err)
 		}
@@ -335,6 +335,7 @@ func TestRetentionNeverDropsRecent(t *testing.T) {
 		st.lastRetention = time.Time{} // niente throttle nel test
 		st.mu.Unlock()
 		pushFiles(t, s, "v", "vandalo", i, map[string][]byte{})
+		s.waitGC() // la retention gira in background
 	}
 	gens, err := s.Generations("v", 0)
 	if err != nil || len(gens) != 31 {
@@ -353,6 +354,7 @@ func TestRetentionDailyKeep(t *testing.T) {
 	for i := 0; i < 8; i++ {
 		pushFiles(t, s, "v", "alex", i, map[string][]byte{"a": []byte(strings.Repeat("d", i+1))})
 	}
+	s.waitGC() // la retention del primo push gira in background
 	now := time.Now()
 	day := func(d, h int) time.Time {
 		l := now.In(time.Local)
@@ -366,10 +368,7 @@ func TestRetentionDailyKeep(t *testing.T) {
 	setGenTime(t, s, "v", 4, day(3, 18))
 	setGenTime(t, s, "v", 5, day(2, 12))
 	setGenTime(t, s, "v", 6, day(1, 12))
-	st, _ := s.space("v")
-	st.mu.Lock()
-	_, err := s.retentionLocked("v", st, now)
-	st.mu.Unlock()
+	_, err := s.RunRetention("v", now)
 	if err != nil {
 		t.Fatal(err)
 	}

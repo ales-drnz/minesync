@@ -59,6 +59,17 @@ func main() {
 	if r := ztauth.New(
 		os.Getenv("ZTNET_URL"), os.Getenv("ZTNET_API_TOKEN"),
 		os.Getenv("ZTNET_NETWORK_ID"), strings.Split(os.Getenv("MINESYNC_ADMINS"), ",")); r != nil {
+		// con ZTNET irraggiungibile si riconoscono i membri dell'ultimo elenco
+		// per MINESYNC_ZTNET_GRACE (default 24h; "0" = senza limite)
+		if v := os.Getenv("MINESYNC_ZTNET_GRACE"); v != "" {
+			if v == "0" {
+				r.SetGrace(0)
+			} else if d, err := time.ParseDuration(v); err == nil {
+				r.SetGrace(d)
+			} else {
+				log.Print(i18n.Lf("MINESYNC_ZTNET_GRACE non valido (%q): uso %s", v, ztauth.DefaultGrace))
+			}
+		}
 		zt = r
 	}
 	if devUser != "" {
@@ -88,6 +99,21 @@ func main() {
 		}
 	}
 	st.KeepLast = keep
+
+	// Spazio libero: sotto max(1 GiB, 2% del volume) — o MINESYNC_MIN_FREE —
+	// push, upload, lock e nuove generazioni sono rifiutati (507).
+	st.DiskGuard = true
+	if v := os.Getenv("MINESYNC_MIN_FREE"); v != "" {
+		if n, err := store.ParseBytes(v); err == nil && n > 0 {
+			st.MinFree = n
+		} else {
+			log.Print(i18n.Lf("MINESYNC_MIN_FREE non valido (%q): uso max(1 GiB, 2%% del disco)", v))
+		}
+	}
+	if free, total, err := st.DiskSpace(); err == nil && total > 0 {
+		log.Print(i18n.Lf("disco dei dati: %s liberi su %s (soglia minima %s)",
+			store.FormatBytes(free), store.FormatBytes(total), store.FormatBytes(st.MinFreeBytes(total))))
+	}
 	log.Print(i18n.Lf("retention: si conservano le ultime %d versioni per server (più quelle delle ultime 24h e una al giorno per 7 giorni)", keep))
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)

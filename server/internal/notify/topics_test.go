@@ -26,14 +26,14 @@ func TestTopicPerServer(t *testing.T) {
 	st, bus, tg, f, _ := setupTopics(t)
 	runBot(t, tg)
 
-	lk, _, err := st.AcquireLock("miomondo", "steve", nil, 90)
+	lk, _, err := st.AcquireLock("miomondo", "steve", playInfo(), 90)
 	if err != nil {
 		t.Fatal(err)
 	}
 	bus.Publish(events.Event{Type: "lock", Space: "miomondo", Actor: "steve"})
 	f.wantTopic(t, 7, "🟢", "miomondo")
 
-	if _, _, err := st.AcquireLock("skyfactory", "alex", nil, 90); err != nil {
+	if _, _, err := st.AcquireLock("skyfactory", "alex", playInfo(), 90); err != nil {
 		t.Fatal(err)
 	}
 	bus.Publish(events.Event{Type: "lock", Space: "skyfactory", Actor: "alex"})
@@ -90,7 +90,7 @@ func TestTopicEliminato(t *testing.T) {
 	f.deadTopic.Store(7)
 	runBot(t, tg)
 
-	if _, _, err := st.AcquireLock("miomondo", "steve", nil, 90); err != nil {
+	if _, _, err := st.AcquireLock("miomondo", "steve", playInfo(), 90); err != nil {
 		t.Fatal(err)
 	}
 	bus.Publish(events.Event{Type: "lock", Space: "miomondo", Actor: "steve"})

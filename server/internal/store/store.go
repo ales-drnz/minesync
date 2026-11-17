@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"minesync/server/internal/i18n"
@@ -72,6 +73,9 @@ type Generation struct {
 	Files   Manifest  `json:"files"`
 	Stats   Stats     `json:"stats"`
 	Corrupt []string  `json:"corrupt,omitempty"` // region danneggiati introdotti qui
+	// Digest è l'identità del contenuto (ManifestDigest di Files): scritto
+	// con la generazione; per quelle vecchie si calcola alla lettura.
+	Digest string `json:"digest,omitempty"`
 }
 
 // GenSummary è una voce della storia senza il manifest completo.
@@ -84,12 +88,13 @@ type GenSummary struct {
 	Restore int       `json:"restore,omitempty"`
 	Stats   Stats     `json:"stats"`
 	Corrupt []string  `json:"corrupt,omitempty"`
+	Digest  string    `json:"digest"`
 }
 
 // Summary restituisce la generazione senza manifest.
 func (g Generation) Summary() GenSummary {
 	return GenSummary{N: g.N, Parent: g.Parent, Author: g.Author, Message: g.Message,
-		TS: g.TS, Restore: g.Restore, Stats: g.Stats, Corrupt: g.Corrupt}
+		TS: g.TS, Restore: g.Restore, Stats: g.Stats, Corrupt: g.Corrupt, Digest: g.Digest}
 }
 
 // Space è la configurazione di uno spazio sincronizzato.
@@ -198,8 +203,20 @@ type Store struct {
 	// potatura automatica).
 	KeepLast int
 
+	// DiskGuard attiva il controllo dello spazio libero prima di ogni
+	// scrittura (push, blob, lock, generazioni). MinFree è la soglia in byte
+	// (0 = max(1 GiB, 2% del volume)).
+	DiskGuard bool
+	MinFree   uint64
+	statfs    func(path string) (free, total uint64, err error)
+
 	mu     sync.Mutex
 	spaces map[string]*spaceState
+
+	lockSnap sync.Map    // id → lockSnap: lock leggibili senza il mutex dello spazio
+	digests  digestCache // digest delle generazioni vecchie
+	gcWG     sync.WaitGroup
+	closing  atomic.Bool // Flush in corso: i GC in background si fermano
 }
 
 type spaceState struct {
@@ -213,6 +230,7 @@ type spaceState struct {
 	deleted   bool              // spazio eliminato: niente più scritture
 
 	lastRetention time.Time // ultima retention automatica (throttle)
+	gc            *gcRun    // pulizia in corso (una alla volta), o nil
 
 	stats      *SpaceStats // caricate pigramente da stats.json
 	statsSaved time.Time   // ultimo flush su disco (throttle)
@@ -242,7 +260,7 @@ func Open(root string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Join(root, "spaces"), 0o775); err != nil {
 		return nil, err
 	}
-	s := &Store{root: root, spaces: map[string]*spaceState{}}
+	s := &Store{root: root, spaces: map[string]*spaceState{}, statfs: diskStat}
 	entries, err := os.ReadDir(filepath.Join(root, "spaces"))
 	if err != nil {
 		return nil, err
@@ -266,6 +284,7 @@ func Open(root string) (*Store, error) {
 			return nil, i18n.Errorf("space %s: %w", name, err)
 		}
 		s.spaces[name] = st
+		s.publishLockLocked(name, st)
 	}
 	return s, nil
 }
@@ -386,7 +405,9 @@ func (s *Store) CreateSpace(name, profile string, ignore []string) (Space, error
 	if err := writeJSON(filepath.Join(dir, "space.json"), meta); err != nil {
 		return Space{}, err
 	}
-	s.spaces[id] = &spaceState{meta: meta, pushes: map[string]*pushSession{}, genTS: map[int]time.Time{}}
+	st := &spaceState{meta: meta, pushes: map[string]*pushSession{}, genTS: map[int]time.Time{}}
+	s.spaces[id] = st
+	s.publishLockLocked(id, st)
 	return meta, nil
 }
 
@@ -444,6 +465,7 @@ func (s *Store) UpdateSpace(id string, name *string, ignore []string) (Space, er
 // DeleteSpace elimina uno spazio e tutti i suoi dati. La directory viene
 // prima rinominata (atomico) e poi cancellata: un upload concorrente non può
 // ricrearla, perché nessuna scrittura fa MkdirAll dentro uno spazio.
+// Rifiutata (LockedError) mentre qualcuno ha un lock vivo, come il restore.
 func (s *Store) DeleteSpace(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -453,6 +475,9 @@ func (s *Store) DeleteSpace(id string) error {
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	if err := st.liveLockLocked(); err != nil {
+		return err
+	}
 	trash := filepath.Join(s.root, "spaces", ".deleted-"+id+"-"+randomID())
 	if err := os.Rename(s.spaceDir(id), trash); err != nil {
 		return err
@@ -461,6 +486,7 @@ func (s *Store) DeleteSpace(id string) error {
 	st.deleted = true
 	st.pushes = map[string]*pushSession{}
 	delete(s.spaces, id)
+	s.lockSnap.Delete(id)
 	if err := os.RemoveAll(trash); err != nil {
 		log.Print(i18n.Lf("store: pulizia di %s incompleta: %v (riprovo al riavvio)", trash, err))
 	}
@@ -490,14 +516,50 @@ func (s *Store) loadGen(id string, n int) (Generation, error) {
 	if n <= 0 {
 		return Generation{}, i18n.Errorf("generazione %d: %w", n, ErrNotFound)
 	}
+	path := s.genPath(id, n)
 	var g Generation
-	if err := readJSON(s.genPath(id, n), &g); err != nil {
+	fi, err := readJSONStat(path, &g)
+	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return Generation{}, i18n.Errorf("generazione %d: %w", n, ErrNotFound)
 		}
 		return Generation{}, i18n.Errorf("generazione %d illeggibile: %w", n, err)
 	}
+	if g.Digest == "" { // generazione scritta prima della 3.2
+		g.Digest = s.digests.get(path, fi, g.Files)
+	}
 	return g, nil
+}
+
+// emptyDigest è il digest della generazione 0 (spazio vuoto).
+var emptyDigest = ManifestDigest(Manifest{})
+
+// ManifestDigestAt restituisce manifest e digest della generazione n (vuoto,
+// col digest del manifest vuoto, se n==0).
+func (s *Store) ManifestDigestAt(id string, n int) (Manifest, string, error) {
+	if _, err := s.space(id); err != nil {
+		return nil, "", err
+	}
+	if n == 0 {
+		return Manifest{}, emptyDigest, nil
+	}
+	g, err := s.loadGen(id, n)
+	if err != nil {
+		return nil, "", err
+	}
+	return g.Files, g.Digest, nil
+}
+
+// genDigest è il digest della generazione n (senza toccare i mutex).
+func (s *Store) genDigest(id string, n int) (string, error) {
+	if n == 0 {
+		return emptyDigest, nil
+	}
+	g, err := s.loadGen(id, n)
+	if err != nil {
+		return "", err
+	}
+	return g.Digest, nil
 }
 
 // manifest restituisce il manifest della generazione n (vuoto se n==0).
@@ -808,6 +870,9 @@ func (s *Store) PutBlob(id, hash string, r io.Reader, gzipped bool) (int64, erro
 		n, _ := io.Copy(io.Discard, r) // scarta ma consuma la richiesta
 		return n, nil
 	}
+	if err := s.checkDisk(); err != nil {
+		return 0, err
+	}
 	dst := s.blobPath(id, hash)
 	if gzipped {
 		dst = s.blobPathGz(id, hash)
@@ -890,6 +955,10 @@ type PushOptions struct {
 	Parent  int
 	Files   Manifest
 	Corrupt []string // region file che il client ha rilevato danneggiati
+	// ParentDigest: digest della generazione Parent come la conosce il
+	// client ("" = non dichiarato, client fino alla 3.1). Se non combacia con
+	// quella dell'hub il push è rifiutato con StaleBaseError.
+	ParentDigest string
 
 	// LockSession: sessione del lock che il chiamante tiene. Obbligatoria
 	// salvo NoLock (che l'API concede solo agli admin).
@@ -909,10 +978,27 @@ func (s *Store) BeginPush(id string, o PushOptions) (string, []string, error) {
 	if err := validateManifest(o.Files); err != nil {
 		return "", nil, err
 	}
+	if err := s.checkDisk(); err != nil {
+		return "", nil, err
+	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	if st.deleted {
+		return "", nil, i18n.Errorf("space %q: %w", id, ErrNotFound)
+	}
 	if !o.NoLock {
-		if err := st.checkLockLocked(o.Author, o.LockSession); err != nil {
+		if err := s.checkLockLocked(id, st, o.Author, o.LockSession); err != nil {
+			return "", nil, err
+		}
+	}
+	// la base dichiarata deve essere la stessa storia dell'hub, non solo lo
+	// stesso numero (prima del controllo su HEAD: è l'errore più preciso)
+	if o.ParentDigest != "" {
+		have, err := s.genDigest(id, o.Parent)
+		switch {
+		case errors.Is(err, ErrNotFound) || (err == nil && have != o.ParentDigest):
+			return "", nil, &StaleBaseError{Parent: o.Parent}
+		case err != nil:
 			return "", nil, err
 		}
 	}
@@ -977,10 +1063,10 @@ func (s *Store) BeginPush(id string, o PushOptions) (string, []string, error) {
 }
 
 func validateManifest(files Manifest) error {
+	if err := checkPaths(files); err != nil {
+		return err
+	}
 	for p, fm := range files {
-		if !validPath(p) {
-			return i18n.Errorf("%w: percorso non valido %q", ErrBadRequest, p)
-		}
 		if !validHash(fm.Hash) {
 			return i18n.Errorf("%w: hash non valido per %q", ErrBadRequest, p)
 		}
@@ -998,13 +1084,22 @@ func validateManifest(files Manifest) error {
 	return nil
 }
 
-// checkLockLocked verifica che owner tenga il lock con quella sessione.
-func (st *spaceState) checkLockLocked(owner, session string) error {
+// checkLockLocked verifica che il chiamante tenga il lock con quella
+// sessione. L'autorità è la sessione, non il nome: se il membro è stato
+// rinominato in ZTNET a sessione in corso (owner diverso da quello del lock)
+// si accetta e si aggiorna il nome mostrato.
+func (s *Store) checkLockLocked(id string, st *spaceState, owner, session string) error {
 	if st.lock == nil {
 		return &LockedError{}
 	}
-	if st.lock.Owner != owner || session == "" || st.lock.Session != session {
-		return &LockedError{Holder: st.lock.Redacted(), IsStale: st.lock.Stale(time.Now().UTC())}
+	if session == "" || st.lock.Session != session {
+		return &LockedError{Holder: st.lock.Redacted(), IsStale: st.lock.Stale(time.Now())}
+	}
+	if owner != "" && owner != st.lock.Owner {
+		st.lock.Owner = owner
+		if err := s.persistLock(id, st); err != nil {
+			log.Print(i18n.Lf("store: lock di %s non salvato: %v", id, err))
+		}
 	}
 	return nil
 }
@@ -1065,7 +1160,7 @@ func (s *Store) CommitPush(id, pushID string) (gen GenSummary, replayed bool, er
 		return GenSummary{}, false, i18n.Errorf("push %s: %w", pushID, ErrNotFound)
 	}
 	if ps.LockSession != "" {
-		if err := st.checkLockLocked(ps.Author, ps.LockSession); err != nil {
+		if err := s.checkLockLocked(id, st, "", ps.LockSession); err != nil {
 			delete(st.pushes, pushID)
 			return GenSummary{}, false, err
 		}
@@ -1108,12 +1203,28 @@ func (s *Store) CheckBlobs(id string, files Manifest) error {
 // (numero, genitore, data e statistiche li calcola lei), avanza HEAD e
 // applica la retention automatica. Unico punto in cui nasce una generazione.
 func (s *Store) newGenLocked(id string, st *spaceState, g Generation) (GenSummary, error) {
+	if st.deleted {
+		return GenSummary{}, i18n.Errorf("space %q: %w", id, ErrNotFound)
+	}
+	if err := s.checkDisk(); err != nil {
+		return GenSummary{}, err
+	}
 	prev, err := s.manifest(id, st.head)
 	if err != nil {
 		return GenSummary{}, err
 	}
 	g.N, g.Parent, g.TS = st.head+1, st.head, time.Now().UTC()
 	g.Stats = diffStats(prev, g.Files)
+	g.Digest = ManifestDigest(g.Files)
+	// un GC in corso deve sapere che questi blob sono di nuovo referenziati
+	// prima che la generazione esista su disco
+	if st.gc != nil {
+		for _, fm := range g.Files {
+			for _, h := range blobsOf(fm) {
+				st.gc.extra[h] = true
+			}
+		}
+	}
 	if err := writeJSON(s.genPath(id, g.N), g); err != nil {
 		return GenSummary{}, err
 	}
@@ -1122,19 +1233,25 @@ func (s *Store) newGenLocked(id string, st *spaceState, g Generation) (GenSummar
 	}
 	st.head = g.N
 	st.genTS[g.N] = g.TS
-	// retention: rilegge tutti i manifest, quindi al massimo una volta l'ora
-	if now := time.Now(); s.KeepLast > 0 && now.Sub(st.lastRetention) > retentionEvery {
+	// retention: rilegge tutti i manifest, quindi al massimo una volta l'ora,
+	// e in background fuori dal mutex (heartbeat, commit e DNS non aspettano)
+	if now := time.Now(); s.KeepLast > 0 && now.Sub(st.lastRetention) > retentionEvery && st.gc == nil {
 		st.lastRetention = now
-		if _, err := s.retentionLocked(id, st, now); err != nil {
-			log.Print(i18n.Lf("store: retention di %s saltata: %v", id, err))
-		}
+		run := st.startGCLocked()
+		s.gcWG.Add(1)
+		go func() {
+			defer s.gcWG.Done()
+			if _, err := s.retention(id, st, run, time.Now()); err != nil {
+				log.Print(i18n.Lf("store: retention di %s saltata: %v", id, err))
+			}
+		}()
 	}
 	return g.Summary(), nil
 }
 
 // liveLockLocked rifiuta le operazioni distruttive mentre qualcuno gioca.
 func (st *spaceState) liveLockLocked() error {
-	if st.lock != nil && !st.lock.Stale(time.Now().UTC()) {
+	if st.lock != nil && !st.lock.Stale(time.Now()) {
 		return &LockedError{Holder: st.lock.Redacted()}
 	}
 	return nil
@@ -1260,24 +1377,9 @@ func diffStats(prev, next Manifest) Stats {
 	return st
 }
 
-// validPath rifiuta percorsi assoluti, traversal e separatori Windows.
-func validPath(p string) bool {
-	if p == "" || strings.HasPrefix(p, "/") || strings.Contains(p, "\\") {
-		return false
-	}
-	for _, seg := range strings.Split(p, "/") {
-		if seg == "" || seg == "." || seg == ".." {
-			return false
-		}
-	}
-	return true
-}
-
-// genTime restituisce il timestamp di una generazione (con cache).
-func (s *Store) genTime(id string, st *spaceState, n int) (time.Time, error) {
-	if ts, ok := st.genTS[n]; ok {
-		return ts, nil
-	}
+// readGenTime legge il solo timestamp di una generazione (senza cache e
+// senza mutex: la retention lo chiama fuori lock).
+func (s *Store) readGenTime(id string, n int) (time.Time, error) {
 	b, err := os.ReadFile(s.genPath(id, n))
 	if err != nil {
 		return time.Time{}, i18n.Errorf("generazione %d illeggibile: %w", n, err)
@@ -1288,7 +1390,6 @@ func (s *Store) genTime(id string, st *spaceState, n int) (time.Time, error) {
 	if err := json.Unmarshal(b, &g); err != nil {
 		return time.Time{}, i18n.Errorf("generazione %d illeggibile: %w", n, err)
 	}
-	st.genTS[n] = g.TS
 	return g.TS, nil
 }
 

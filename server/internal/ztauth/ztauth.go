@@ -26,8 +26,10 @@ type member struct {
 
 const (
 	defaultTTL = 30 * time.Second // dopo quanto si rinfresca la cache
-	maxStale   = 5 * time.Minute  // oltre, con ztnet giù, si nega l'accesso
 	retryEvery = 5 * time.Second  // tra due tentativi falliti
+	// DefaultGrace: per quanto, con ZTNET irraggiungibile, si continuano a
+	// riconoscere i membri dell'ultimo elenco scaricato (MINESYNC_ZTNET_GRACE).
+	DefaultGrace = 24 * time.Hour
 )
 
 type Resolver struct {
@@ -41,6 +43,8 @@ type Resolver struct {
 	fetched    time.Time     // ultimo aggiornamento riuscito
 	lastTry    time.Time     // ultimo tentativo (anche fallito)
 	refreshing chan struct{} // non nil mentre un aggiornamento è in corso
+	grace      time.Duration // validità dell'ultimo elenco con ZTNET giù (≤0 = illimitata)
+	down       bool          // ZTNET irraggiungibile (per loggarlo una volta sola)
 }
 
 // New crea il resolver; restituisce nil se la configurazione è incompleta
@@ -65,32 +69,49 @@ func newResolver(admins []string, fetch func() (map[string]member, error)) *Reso
 			am[a] = true
 		}
 	}
-	return &Resolver{admins: am, ttl: defaultTTL, fetch: fetch, byIP: map[string]member{}}
+	return &Resolver{admins: am, ttl: defaultTTL, fetch: fetch, byIP: map[string]member{}, grace: DefaultGrace}
+}
+
+// SetGrace fissa per quanto, con ZTNET irraggiungibile, valgono ancora i
+// membri dell'ultimo elenco scaricato (≤0 = senza limite).
+func (r *Resolver) SetGrace(d time.Duration) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	r.grace = d
+	r.mu.Unlock()
 }
 
 // Lookup risolve un IP in (nome, admin). ok=false se l'IP non è un membro.
 // L'admin si riconosce per nome membro O per node-ID (MINESYNC_ADMINS).
-// Con una cache valida risponde subito (e la rinfresca in background se
-// vecchia); aspetta ztnet solo se la cache è vuota o troppo vecchia.
+// Aspetta ZTNET solo al primo uso (elenco mai scaricato); poi risponde sempre
+// dalla cache, che si rinfresca in background. Se ZTNET non risponde si
+// continua con l'ultimo elenco noto (un membro sparisce solo quando un
+// aggiornamento RIUSCITO lo dice), fino al limite di grace: un ZTNET giù non
+// deve chiudere fuori tutti.
 func (r *Resolver) Lookup(ip string) (name string, admin bool, ok bool) {
 	if r == nil {
 		return "", false, false
 	}
 	r.mu.Lock()
-	age := time.Since(r.fetched)
-	if age > r.ttl {
+	switch {
+	case r.fetched.IsZero():
 		ch := r.refreshLocked()
-		if r.fetched.IsZero() || age > maxStale {
-			r.mu.Unlock()
-			if ch != nil {
-				<-ch
-			}
-			r.mu.Lock()
+		r.mu.Unlock()
+		if ch != nil {
+			<-ch
 		}
+		r.mu.Lock()
+	case time.Since(r.fetched) > r.ttl:
+		r.refreshLocked() // in background: si risponde con la cache
 	}
 	defer r.mu.Unlock()
-	if r.fetched.IsZero() || time.Since(r.fetched) > maxStale {
-		return "", false, false // ztnet irraggiungibile da troppo: meglio negare
+	if r.fetched.IsZero() {
+		return "", false, false // mai riuscito a sapere chi è membro
+	}
+	if r.grace > 0 && time.Since(r.fetched) > r.grace {
+		return "", false, false // ZTNET giù da troppo: meglio negare
 	}
 	m, ok := r.byIP[ip]
 	if !ok {
@@ -114,10 +135,16 @@ func (r *Resolver) refreshLocked() chan struct{} {
 	go func() {
 		fresh, err := r.fetch()
 		r.mu.Lock()
-		if err == nil {
-			r.byIP, r.fetched = fresh, time.Now()
-		} else {
-			log.Print(i18n.Lf("ztauth: aggiornamento membri fallito: %v", err))
+		switch {
+		case err == nil:
+			if r.down {
+				log.Print(i18n.Lf("ztauth: ZTNET di nuovo raggiungibile (%d indirizzi membri)", len(fresh)))
+			}
+			r.byIP, r.fetched, r.down = fresh, time.Now(), false
+		case !r.down:
+			// una volta sola, non a ogni tentativo
+			r.down = true
+			log.Print(i18n.Lf("ztauth: ZTNET irraggiungibile (%v): continuo a riconoscere i membri già noti (%d indirizzi)", err, len(r.byIP)))
 		}
 		r.refreshing = nil
 		r.mu.Unlock()

@@ -41,6 +41,7 @@ const I18N = {
     "ev.restore": "restore",
     "ev.gc": "pulizia",
     "ev.space": "server",
+    "ev.disk": "disco",
     "denied.l1": "Non ti riconosco: questo hub autentica tramite la rete ZeroTier.",
     "denied.l2": "Apri la pagina dall'IP ZeroTier dell'hub, con un dispositivo autorizzato.",
     "denied.retry": "Riprova",
@@ -263,6 +264,7 @@ const I18N = {
     "ev.restore": "restore",
     "ev.gc": "cleanup",
     "ev.space": "server",
+    "ev.disk": "disk",
     "denied.l1": "I don't recognise you: this hub authenticates through the ZeroTier network.",
     "denied.l2": "Open this page from the hub's ZeroTier IP, on an authorised device.",
     "denied.retry": "Retry",
@@ -757,7 +759,7 @@ function canAutoRefresh() {
   const a = document.activeElement;
   return !a || !["INPUT", "TEXTAREA", "SELECT"].includes(a.tagName);
 }
-const EV_TYPES = ["push", "lock", "unlock", "force", "restore", "gc", "space", "settings"];
+const EV_TYPES = ["push", "lock", "unlock", "force", "restore", "gc", "space", "settings", "disk"];
 // testo di un evento: msg arriva già nella lingua della richiesta (l'hub lo
 // rende da key/args quando ci sono; ?lang= sullo stream SSE, Accept-Language
 // sulla lista). Unico punto da cambiare se un giorno si renderà qui.

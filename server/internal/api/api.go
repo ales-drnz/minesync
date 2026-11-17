@@ -81,7 +81,13 @@ type Server struct {
 	probing    sync.Map // spazi con un test di raggiungibilità già in corso
 	worldCache sync.Map // dati mondo/giocatori/mod in cache per generazione
 	icons      iconCache
+
+	diskMu        sync.Mutex // avviso "disco pieno": al massimo uno l'ora
+	lastDiskAlert time.Time
 }
+
+// diskAlertEvery: ogni quanto, al massimo, si ripete l'avviso di disco pieno.
+const diskAlertEvery = time.Hour
 
 // Handler costruisce il mux completo.
 func (s *Server) Handler() http.Handler {
@@ -224,6 +230,10 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var le *store.LockedError
 	var md *store.MassDeleteError
 	var mbe *http.MaxBytesError
+	var sg *store.SpaceGoneError
+	var sb *store.StaleBaseError
+	var bp *store.BadPathError
+	var df *store.DiskFullError
 	switch {
 	case errors.As(err, &le):
 		jsonReply(w, http.StatusConflict, map[string]any{
@@ -233,6 +243,15 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 		jsonReply(w, http.StatusConflict, map[string]any{
 			"error": md.Localize(lang), "code": "mass_delete", "removed": md.Removed, "total": md.Total,
 		})
+	case errors.As(err, &sg):
+		jsonReply(w, http.StatusNotFound, map[string]any{"error": sg.Localize(lang), "code": "space_gone"})
+	case errors.As(err, &sb):
+		jsonReply(w, http.StatusConflict, map[string]any{"error": sb.Localize(lang), "code": "stale_base"})
+	case errors.As(err, &bp):
+		jsonReply(w, http.StatusBadRequest, map[string]any{"error": bp.Localize(lang), "code": "bad_path", "path": bp.Path})
+	case errors.As(err, &df):
+		s.diskAlert(df)
+		jsonReply(w, http.StatusInsufficientStorage, map[string]any{"error": df.Localize(lang), "code": "disk_full"})
 	case errors.As(err, &mbe):
 		jsonError(w, r, http.StatusRequestEntityTooLarge, "corpo della richiesta troppo grande")
 	case errors.Is(err, errUpstream):
@@ -249,6 +268,25 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 		jsonMsg(w, http.StatusBadRequest, i18n.Localize(lang, err))
 	default:
 		jsonMsg(w, http.StatusInternalServerError, i18n.Localize(lang, err))
+	}
+}
+
+// diskAlert registra (log + evento, che il bot Telegram inoltra) che il
+// disco dell'hub è sotto la soglia: al massimo una volta l'ora.
+func (s *Server) diskAlert(df *store.DiskFullError) {
+	s.diskMu.Lock()
+	if !s.lastDiskAlert.IsZero() && time.Since(s.lastDiskAlert) < diskAlertEvery {
+		s.diskMu.Unlock()
+		return
+	}
+	s.lastDiskAlert = time.Now()
+	s.diskMu.Unlock()
+	free, need := store.FormatBytes(df.Free), store.FormatBytes(df.Need)
+	log.Print(i18n.Lf("ATTENZIONE: disco dei dati quasi pieno (%s liberi, soglia %s): push, upload e lock sono rifiutati", free, need))
+	if s.Bus != nil {
+		s.Bus.Publish(events.Event{Type: "disk",
+			Text: i18n.M("⚠ disco dell'hub quasi pieno: %s liberi (soglia %s), push e nuove sessioni sono sospesi", free, need),
+			Data: map[string]any{"free": df.Free, "need": df.Need}})
 	}
 }
 
@@ -271,22 +309,62 @@ func jsonReply(w http.ResponseWriter, code int, v any) {
 
 func decode[T any](r *http.Request) (T, error) {
 	var v T
-	if err := json.NewDecoder(io.LimitReader(r.Body, maxJSONBody)).Decode(&v); err != nil {
+	body := io.LimitReader(r.Body, maxJSONBody)
+	if lr, ok := r.Body.(*limitedReader); ok {
+		body = lr // già limitato, con l'errore giusto
+	}
+	if err := json.NewDecoder(body).Decode(&v); err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			return v, mbe // 413, non "JSON non valido"
+		}
 		return v, i18n.Errorf("%w: body JSON non valido: %v", store.ErrBadRequest, err)
 	}
 	return v, nil
 }
 
+// limitedReader è io.LimitReader che, oltre il limite, fallisce con
+// *http.MaxBytesError invece di troncare: per i corpi decompressi, dove
+// troncare darebbe un "JSON non valido" fuorviante.
+type limitedReader struct {
+	r    io.Reader
+	left int64
+}
+
+func (l *limitedReader) Read(p []byte) (int, error) {
+	if l.left <= 0 {
+		var one [1]byte
+		if n, _ := l.r.Read(one[:]); n > 0 {
+			return 0, &http.MaxBytesError{Limit: maxJSONBody}
+		}
+		return 0, io.EOF
+	}
+	if int64(len(p)) > l.left {
+		p = p[:l.left]
+	}
+	n, err := l.r.Read(p)
+	l.left -= int64(n)
+	return n, err
+}
+
+func (l *limitedReader) Close() error { return nil }
+
 // --- handlers ---
 
 func (s *Server) handleStatus(_ http.ResponseWriter, _ *http.Request, _ Identity) (any, error) {
 	spaces := s.Store.ListSpaces()
-	return map[string]any{
+	out := map[string]any{
 		"name": "minesync-hub", "version": Version,
 		"go": runtime.Version(), "uptimeSec": int(time.Since(s.Started).Seconds()),
 		"spaces": len(spaces), "time": time.Now().UTC(),
 		"dnsZone": s.DNSZone, // "" se il DNS interno è disattivo
-	}, nil
+	}
+	// spazio sul volume dei dati (assente se non misurabile)
+	if free, total, err := s.Store.DiskSpace(); err == nil && total > 0 {
+		out["diskFree"], out["diskTotal"] = free, total
+		out["diskMinFree"] = s.Store.MinFreeBytes(total)
+	}
+	return out, nil
 }
 
 func (s *Server) handleWhoami(_ http.ResponseWriter, _ *http.Request, who Identity) (any, error) {
@@ -308,7 +386,7 @@ func (s *Server) spaceView(id string) (spaceView, error) {
 	}
 	v := spaceView{Space: meta, Head: head, Lock: lk}
 	if lk != nil {
-		v.Stale = lk.Stale(time.Now().UTC())
+		v.Stale = lk.Stale(time.Now())
 	}
 	return v, nil
 }
@@ -377,11 +455,13 @@ func (s *Server) handleUpdateSpace(_ http.ResponseWriter, r *http.Request, who I
 
 func (s *Server) handleDeleteSpace(_ http.ResponseWriter, r *http.Request, who Identity) (any, error) {
 	id := r.PathValue("id")
+	// lo store rifiuta l'eliminazione se qualcuno sta giocando (409)
 	if err := s.Store.DeleteSpace(id); err != nil {
 		return nil, err
 	}
 	s.Bus.Publish(events.Event{Type: "space", Space: id, Actor: who.Name,
-		Text: i18n.M("%s ha eliminato lo spazio %s", who.Name, id)})
+		Text: i18n.M("%s ha eliminato lo spazio %s", who.Name, id),
+		Data: map[string]any{"deleted": true}})
 	return map[string]bool{"ok": true}, nil
 }
 
@@ -398,11 +478,11 @@ func (s *Server) handleManifest(_ http.ResponseWriter, r *http.Request, _ Identi
 			return nil, i18n.Errorf("%w: gen non numerico", store.ErrBadRequest)
 		}
 	}
-	m, err := s.Store.ManifestAt(id, n)
+	m, digest, err := s.Store.ManifestDigestAt(id, n)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"gen": n, "head": head, "files": m}, nil
+	return map[string]any{"gen": n, "head": head, "digest": digest, "files": m}, nil
 }
 
 func (s *Server) handleStats(_ http.ResponseWriter, r *http.Request, _ Identity) (any, error) {
@@ -541,13 +621,24 @@ func (s *Server) handleGetBlob(w http.ResponseWriter, r *http.Request, _ Identit
 	io.Copy(w, f)
 }
 
-func (s *Server) handlePushBegin(_ http.ResponseWriter, r *http.Request, who Identity) (any, error) {
+func (s *Server) handlePushBegin(w http.ResponseWriter, r *http.Request, who Identity) (any, error) {
+	// il manifest può arrivare compresso (client ≥3.2): il limite vale sui
+	// byte DECOMPRESSI, e anche quelli compressi hanno un tetto
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("Content-Encoding")), "gzip") {
+		zr, err := gzip.NewReader(http.MaxBytesReader(w, r.Body, maxJSONBody))
+		if err != nil {
+			return nil, i18n.Errorf("%w: gzip non valido: %v", store.ErrBadRequest, err)
+		}
+		defer zr.Close()
+		r.Body = &limitedReader{r: zr, left: maxJSONBody}
+	}
 	req, err := decode[struct {
-		Parent  int            `json:"parent"`
-		Message string         `json:"message"`
-		Files   store.Manifest `json:"files"`
-		Corrupt []string       `json:"corrupt"`
-		Session string         `json:"session"` // sessione del lock tenuto dal chiamante
+		Parent       int            `json:"parent"`
+		ParentDigest string         `json:"parentDigest"` // identità della base (3.2+)
+		Message      string         `json:"message"`
+		Files        store.Manifest `json:"files"`
+		Corrupt      []string       `json:"corrupt"`
+		Session      string         `json:"session"` // sessione del lock tenuto dal chiamante
 	}](r)
 	if err != nil {
 		return nil, err
@@ -560,7 +651,7 @@ func (s *Server) handlePushBegin(_ http.ResponseWriter, r *http.Request, who Ide
 		return nil, i18n.Errorf("%w: nolock e allowMassDelete", errForbidden)
 	}
 	pid, missing, err := s.Store.BeginPush(r.PathValue("id"), store.PushOptions{
-		Author: who.Name, Message: req.Message, Parent: req.Parent,
+		Author: who.Name, Message: req.Message, Parent: req.Parent, ParentDigest: req.ParentDigest,
 		Files: req.Files, Corrupt: req.Corrupt,
 		LockSession: req.Session, NoLock: noLock, AllowMassDelete: allowMass,
 	})
@@ -629,7 +720,7 @@ func (s *Server) handleLockAcquire(_ http.ResponseWriter, r *http.Request, who I
 	return map[string]any{"session": lk.Session, "ttlSec": lk.TTLSec, "tookOver": tookOver}, nil
 }
 
-func (s *Server) handleLockBeat(_ http.ResponseWriter, r *http.Request, _ Identity) (any, error) {
+func (s *Server) handleLockBeat(_ http.ResponseWriter, r *http.Request, who Identity) (any, error) {
 	req, err := decode[struct {
 		Session string   `json:"session"`
 		Players []string `json:"players"`
@@ -639,7 +730,8 @@ func (s *Server) handleLockBeat(_ http.ResponseWriter, r *http.Request, _ Identi
 		return nil, err
 	}
 	id := r.PathValue("id")
-	lk, err := s.Store.HeartbeatLock(id, req.Session, req.Players, req.Ready)
+	// la sessione è l'autorità; il nome attuale aggiorna solo quello mostrato
+	lk, err := s.Store.HeartbeatLock(id, req.Session, who.Name, req.Players, req.Ready)
 	if err != nil {
 		return nil, err
 	}
@@ -650,7 +742,7 @@ func (s *Server) handleLockBeat(_ http.ResponseWriter, r *http.Request, _ Identi
 			s.probeReachable(id, req.Session, remoteIP(r), lk.Info["port"])
 		}
 	}
-	return map[string]any{"ok": true, "lastBeat": lk.LastBeat, "reachable": lk.Reachable}, nil
+	return map[string]any{"ok": true, "lastBeat": lk.LastBeat.UTC(), "reachable": lk.Reachable}, nil
 }
 
 // probeReachable prova a connettersi (TCP) al server Minecraft di chi hosta:

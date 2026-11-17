@@ -57,15 +57,96 @@ func TestLookupCacheAndBackgroundRefresh(t *testing.T) {
 	}
 }
 
-func TestLookupDeniesWhenTooStale(t *testing.T) {
-	r := newResolver(nil, func() (map[string]member, error) { return nil, errors.New("giù") })
+// Con ZTNET giù si continua con l'ultimo elenco noto (anche dopo ore), senza
+// aspettare ZTNET; oltre la grace si nega.
+func TestLookupServesKnownMembersWhileZTNETDown(t *testing.T) {
+	var calls atomic.Int32
+	r := newResolver(nil, func() (map[string]member, error) {
+		calls.Add(1)
+		return nil, errors.New("giù")
+	})
 	r.byIP = map[string]member{"10.0.0.1": {Name: "alex"}}
-	r.fetched = time.Now().Add(-10 * time.Minute)
+	r.fetched = time.Now().Add(-3 * time.Hour)
+	start := time.Now()
+	if name, _, ok := r.Lookup("10.0.0.1"); !ok || name != "alex" {
+		t.Fatal("ZTNET giù da 3 ore: il membro noto è stato chiuso fuori")
+	}
+	if time.Since(start) > time.Second {
+		t.Fatal("Lookup ha aspettato ZTNET con la cache disponibile")
+	}
+	if _, _, ok := r.Lookup("10.0.0.9"); ok {
+		t.Fatal("IP sconosciuto accettato")
+	}
+	// il refresh fallito non svuota la cache
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+		r.mu.Lock()
+		busy := r.refreshing != nil
+		r.mu.Unlock()
+		if calls.Load() > 0 && !busy {
+			break
+		}
+	}
+	r.mu.Lock()
+	down := r.down
+	r.mu.Unlock()
+	if !down {
+		t.Error("ZTNET irraggiungibile non registrato")
+	}
+	if _, _, ok := r.Lookup("10.0.0.1"); !ok {
+		t.Fatal("membro perso dopo un aggiornamento fallito")
+	}
+	// oltre la grace si nega
+	r.SetGrace(time.Hour)
 	if _, _, ok := r.Lookup("10.0.0.1"); ok {
-		t.Fatal("cache vecchia di 10 minuti con ztnet giù: accesso concesso")
+		t.Fatal("ZTNET giù oltre la grace: accesso concesso")
+	}
+	// grace ≤0: senza limite
+	r.SetGrace(0)
+	if _, _, ok := r.Lookup("10.0.0.1"); !ok {
+		t.Fatal("grace illimitata: accesso negato")
 	}
 	var nilR *Resolver
 	if _, _, ok := nilR.Lookup("10.0.0.1"); ok {
 		t.Fatal("resolver nil ha autenticato")
+	}
+}
+
+// Un membro tolto in ZTNET sparisce solo quando un aggiornamento riuscito lo
+// dice; il ritorno di ZTNET azzera lo stato "giù".
+func TestMemberRemovedOnlyBySuccessfulRefresh(t *testing.T) {
+	var fail atomic.Bool
+	r := newResolver(nil, func() (map[string]member, error) {
+		if fail.Load() {
+			return nil, errors.New("giù")
+		}
+		return map[string]member{"10.0.0.2": {Name: "bob"}}, nil // alex tolto
+	})
+	r.byIP = map[string]member{"10.0.0.1": {Name: "alex"}}
+	r.fetched = time.Now().Add(-time.Minute)
+	r.down = true
+	refresh := func() {
+		r.mu.Lock()
+		r.lastTry = time.Time{}
+		ch := r.refreshLocked()
+		r.mu.Unlock()
+		<-ch
+	}
+	fail.Store(true)
+	refresh()
+	if _, _, ok := r.Lookup("10.0.0.1"); !ok {
+		t.Fatal("alex perso con ZTNET giù")
+	}
+	fail.Store(false)
+	refresh()
+	if _, _, ok := r.Lookup("10.0.0.1"); ok {
+		t.Fatal("alex ancora accettato dopo che ZTNET l'ha tolto")
+	}
+	if _, _, ok := r.Lookup("10.0.0.2"); !ok {
+		t.Fatal("bob non riconosciuto")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.down {
+		t.Error("ZTNET tornato ma ancora segnato giù")
 	}
 }
