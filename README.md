@@ -142,6 +142,8 @@ A fully commented example (DNS, building from source, running with your own UID)
 | `MINESYNC_DNS_ZONE` | `internal` | Zone for the fixed addresses, see [§5](#5-a-fixed-address-for-everyone-dns) |
 | `MINESYNC_DNS_ADDR` | `:53` | DNS listen address, `off` to disable |
 | `MINESYNC_LANG` | from `LANG`, else `en` | Language of the hub's logs and default language of the Telegram bot: `en` or `it` |
+| `MINESYNC_MIN_FREE` | `1GiB` (or 2% of the disk) | Free space the hub keeps: below it, pushes and new sessions are refused with a clear error and admins get one Telegram alert per hour |
+| `MINESYNC_ZTNET_GRACE` | `24h` | How long the hub keeps trusting the last known member list while ZTNET is unreachable (`0` = forever) |
 | `MINESYNC_DL` | `/opt/dl` | Folder with the client binaries served on `/dl` |
 | `MINESYNC_DEV_USER` | — | **Development only**: authenticates loopback requests as this admin |
 
@@ -179,6 +181,12 @@ The space now has generation #1 and from here on everyone just uses the TUI.
 The session panel shows whether the hub can reach your game port, who is online, the countdown to the next autosave and a warning when the server cannot keep up. **Ctrl+E** toggles the 30-minute autostop. Press **?** anywhere for every key.
 
 If the final push of a session fails, nothing is lost: the next time you play, the client notices the local changes and pushes them before pulling. If someone else played in the meantime, it asks before discarding your copy and saves it in `.minesync-backup/` next to the server folder.
+
+#### Slow connections
+
+Every autosave first freezes a consistent copy of what changed (a few seconds, with world saving paused only for that), turns saving back on, and then uploads in the background while you keep playing. Background uploads use at most ~70% of your measured upload speed so players connected to you don't lag; set `uploadLimitKBps` in `~/.minesync/config.json` (or `MINESYNC_UPLOAD_LIMIT`, in KB/s; a negative value removes the limit) to choose yourself. If an upload is still running when the next autosave is due, the next one simply starts right after. The session panel shows how old the copy on the hub is. The final push when you stop runs at full speed.
+
+Files whose names Windows can't store (`aux.txt`, `what?.txt`, names ending with a dot…) are skipped with a warning, so a file created on Linux never locks Windows friends out.
 
 ### 5. A fixed address for everyone (DNS)
 

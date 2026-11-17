@@ -1,5 +1,31 @@
 # Changelog
 
+## [3.2.0] - 2026-11-17
+
+Robustness release: slow connections, unusual failures and a few edge cases found by an end-to-end review.
+
+### Changed
+
+- **Autosave no longer pauses world saving during the upload.** The client freezes a consistent snapshot of the changed data (waiting for mods that keep writing to settle), turns saving back on within seconds and uploads in the background without blocking the session. Background uploads are rate-limited (about 70% of the measured upload speed, configurable) and never overlap; the session panel shows how old the copy on the hub is. Stopping cancels an in-flight upload and pushes the final state at full speed.
+- Uploads work on very slow links: the client no longer hands a whole blob to the OS buffer and then times out waiting for the reply while the bytes are still leaving.
+- Manual and command-line pushes keep the lock alive for their whole duration, and are no longer announced on Telegram as a server opening.
+- Lock ownership follows the session, so renaming a member in ZTNET mid-game no longer stops the server.
+- The hub keeps serving known members when ZTNET is down (up to `MINESYNC_ZTNET_GRACE`, 24 h by default) instead of locking everyone out after 5 minutes.
+- Cleanup of old generations runs outside the space lock, and the DNS answers from a snapshot, so a large history never stalls heartbeats or name lookups.
+
+### Fixed
+
+- A player typing "Saved the game" in chat (`/me`, `/say`, renamed items…) could make the client upload before the server had finished saving. Only the server's own confirmation counts now, and the wait for it extends while the server is still saving (up to 10 minutes).
+- Generations are identified by a content digest as well as their number: after restoring the hub from a backup, or recreating a space with the same name, an old local copy can no longer silently overwrite newer work.
+- A file that is unreadable (antivirus, a mod's database) no longer aborts the whole push: it is skipped and the hub keeps its previous version.
+- A file changed during the upload is no longer retried with the same hash; the next attempt takes a fresh snapshot.
+- File names that are invalid on Windows, and names differing only in case, are skipped on upload and refused by the hub, instead of breaking every Windows friend's pull.
+- The hub refuses pushes and new sessions when its disk is nearly full (`MINESYNC_MIN_FREE`), with a clear message and a Telegram alert; the client checks free space before a pull.
+- Deleting a space while someone is hosting it is refused; a hosting client whose space disappears stops cleanly.
+- Telegram honours rate limits, merges a quick close/reopen into nothing, and keeps announcements consistent after a lock goes stale and comes back.
+- On Windows the Minecraft server is closed together with the client if the client crashes or is killed.
+- Smaller fixes: lock times immune to clock jumps, hash cache safe on FAT/exFAT drives, `chmod` errors ignored on filesystems without permissions, the system proxy is not used for the hub (`MINESYNC_USE_PROXY=1` to opt in), files that changed during an interrupted pull are backed up before the retry.
+
 ## [3.1.1] - 2026-11-17
 
 ### Fixed

@@ -70,7 +70,7 @@ Because authority is ambient (any page in a member's browser comes from the memb
 | `POST /api/v1/spaces/{id}/restore` · `/restore-file` | restore a generation or one file (admin) |
 | `POST /api/v1/spaces/{id}/gc?keep=N` | prune and collect blobs (admin) |
 | `GET /api/v1/spaces/{id}/blobs/{hash}` | download a blob |
-| `POST /api/v1/spaces/{id}/push/begin` | proposed manifest + lock session → `{pushId, missing[]}` |
+| `POST /api/v1/spaces/{id}/push/begin` | proposed manifest (optionally gzip) + lock session + `parentDigest` → `{pushId, missing[]}` |
 | `PUT /api/v1/spaces/{id}/push/{pushId}/blobs/{hash}` | upload a blob (re-hashed by the hub) |
 | `POST /api/v1/spaces/{id}/push/{pushId}/commit` | atomic commit → new generation (idempotent) |
 | `POST /api/v1/spaces/{id}/lock` · `/lock/heartbeat` · `DELETE …/lock` | acquire · renew · release |
@@ -89,13 +89,16 @@ Rules:
 - Lock TTL 90 s, heartbeat every 20 s. An expired lock is *stale* and anyone may take it; breaking a live lock is admin-only.
 - Automatic retention keeps the last `MINESYNC_KEEP` generations, everything from the last 24 hours and one generation per day for a week.
 
+Generation identity: every generation carries a `digest` (SHA-256 of its canonical file map), returned with manifests and generation summaries. Clients remember the digest of the generation they synced and send it as `parentDigest`: a mismatch (hub restored from a backup, space recreated) is a `409 stale_base`, so numbers that repeat can never let an old copy overwrite newer work. Error codes the client relies on: `stale_base`, `mass_delete`, `locked`, `bad_path`, `disk_full` (507), `space_gone` (404 on heartbeat).
+
 ## Client
 
 One binary `minesync` (Windows, Linux, macOS). Configuration in `~/.minesync/config.json`: hub address and `space → local folder` links.
 
 - **Sync engine**: diff between the remote manifest and a local scan, with a hash cache keyed by `(path, size, mtime)`. Region files are split into chunks so a save only uploads the chunks that changed. 8 parallel workers, SHA-256 verification after every write, retries with backoff, idle watchdog on transfers. Every path and hash received from the hub is validated before touching the disk.
 - **Pull** = checkout of HEAD. Before overwriting anything the client compares the local tree with the generation it last synced: unpushed changes are pushed first when nobody else pushed meanwhile, otherwise the user decides and the local copy is backed up.
-- **Push** = begin → upload missing blobs → commit (retried safely).
+- **Push** = begin → upload missing blobs → commit (retried safely). Upload connections use a small socket send buffer so progress (and the idle watchdog) reflect what really left the machine on slow links.
+- **Autosave** = `save-off` → `save-all flush` → strict confirmation → wait until files stop changing → snapshot of the new blobs into a local outbox (torn files re-read, unreadable ones skipped) → `save-on` → background upload from the outbox (rate-limited, never overlapping, never blocking the session) → commit.
 - **Minecraft profile**: detects start scripts and launcher jars, picks Java, starts the server with stdin/stdout embedded, autosaves every 5 minutes, stops cleanly and pushes. The server process is stopped cleanly when the client exits for any reason.
 - **Self-update**: only to a newer version, verified against `SHA256SUMS` and, when the client embeds a public key, its ed25519 signature; the previous binary is kept until the new one has started.
 
