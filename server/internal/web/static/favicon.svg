@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <!-- stesso disegno di scripts/genicon (icona 256: margine 6, raggio 52, cubo a scala 0.77) -->
+  <rect x="0.5625" y="0.5625" width="22.875" height="22.875" rx="4.875" fill="#3c8527"/>
+  <g fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="translate(2.775 2.775) scale(0.76875)">
+    <path d="M12 2 20.66 7 20.66 17 12 22 3.34 17 3.34 7Z"/>
+    <path d="m3.34 7 8.66 5 8.66-5"/>
+    <path d="M12 12v10"/>
+  </g>
+</svg>

@@ -9,7 +9,8 @@ import (
 
 // contentSecurityPolicy è compatibile con la web UI statica: nessuno script
 // inline (app.js è esterno), ma stili inline sì (attributi style creati da
-// app.js e <style> della pagina /dl). Immagini data: per la favicon.
+// app.js e <style> della pagina /dl). Immagini data: per gli identicon
+// dei giocatori (la favicon ora è un file statico).
 const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
 	"img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; " +
 	"base-uri 'none'; form-action 'self'; frame-ancestors 'none'"

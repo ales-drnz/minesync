@@ -27,6 +27,20 @@
   --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
   --pixel: "Pixel", monospace;
   --radius: 3px;
+
+  /* misure condivise: un'altezza per tutti i controlli (input, select,
+     bottoni) + una variante compatta, una per pillole e chip, una scala di
+     spaziature e il padding delle card. Cambiare qui, non nei singoli blocchi. */
+  --ctl-h: 36px;           /* input, select, bottoni */
+  --ctl-h-sm: 30px;        /* header, righe della storia, azioni secondarie */
+  --ctl-h-lg: 44px;        /* il bottone di download principale */
+  --ctl-px: 16px;          /* padding orizzontale dei bottoni */
+  --ctl-px-sm: 10px;
+  --pill-h: 28px;          /* stato del server, esito porta */
+  --chip-h: 24px;          /* chip, giocatori online */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px;
+  --card-pad: 16px;
+  --card-pad-lg: 20px;     /* card con un modulo (impostazioni) */
 }
 :root[data-theme="light"] {
   --bg: #efefef; --bg2: #ffffff; --card: #ffffff; --card2: #f4f4f4;
@@ -67,14 +81,16 @@ header {
   background: var(--bg2);
   position: sticky; top: 0; z-index: 5;
 }
-.brand { display: flex; align-items: center; gap: 12px; }
+.brand { display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0; }
 .logo {
-  width: 34px; height: 34px; border-radius: 6px; display: grid; place-items: center;
+  width: 34px; height: 34px; flex: 0 0 34px; border-radius: 6px;
+  display: grid; place-items: center;
   background: var(--green); color: #fff;
 }
 .brand-txt {
   font-family: var(--pixel); font-size: 13px; letter-spacing: 1px;
   line-height: 1; /* il font pixel non ha discendenti: centrato senza offset */
+  white-space: nowrap;
 }
 .brand-txt .ver {
   font-family: var(--mono); font-size: 11px; color: var(--faint);
@@ -82,24 +98,26 @@ header {
 }
 .muted { color: var(--muted); font-weight: 400; }
 
-.tabs { display: flex; gap: 4px; height: 100%; margin-right: auto; margin-left: 16px; }
+.tabs { display: flex; gap: var(--sp-1); height: 100%; margin-right: auto; margin-left: var(--sp-4); flex-shrink: 0; }
 .tabs a {
   display: flex; align-items: center; padding: 0 18px;
   color: var(--muted); text-decoration: none;
   font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: .08em;
   border-bottom: 3px solid transparent; border-top: 3px solid transparent;
+  white-space: nowrap;
 }
 .tabs a:hover { color: var(--text); }
 .tabs a[hidden], [hidden] { display: none !important; }
 .tabs a svg { margin-right: 7px; flex-shrink: 0; }
 .tabs a.active { color: var(--text); border-bottom-color: var(--green-hi); }
 
-.head-right { display: flex; align-items: center; gap: 13px; }
-.who { font-size: 13.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.head-right { display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0; }
+.who { font-size: 13.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
 .connpill {
-  display: inline-flex; align-items: center; gap: 7px;
+  display: inline-flex; align-items: center; gap: 7px; height: var(--ctl-h-sm);
   font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em;
-  padding: 4px 11px; border-radius: var(--radius); border: 1px solid var(--line);
+  padding: 0 11px; border-radius: var(--radius); border: 1px solid var(--line);
+  min-width: var(--ctl-h-sm); justify-content: center; /* solo pallino: quadrato */
 }
 .connpill .dot { width: 8px; height: 8px; background: var(--red); }
 .connpill.on { color: var(--green-txt); }
@@ -131,21 +149,21 @@ h2:first-child { margin-top: 0; }
 .statbar { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 28px; }
 .stat {
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 14px 16px; display: flex; gap: 12px; align-items: center;
+  padding: var(--card-pad); display: flex; gap: var(--sp-3); align-items: center;
 }
 .stat svg { color: var(--green-txt); flex-shrink: 0; }
 .stat .big { font-family: var(--pixel); font-size: 15px; line-height: 1.4; padding-top: 2px; }
 .stat .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }
 
 /* ---------- cards / grid ---------- */
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: var(--sp-3); }
 .card {
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 15px 17px;
+  padding: var(--card-pad); min-width: 0;
 }
 .card.clickable { cursor: pointer; transition: border-color .12s, background .12s; }
 .card.clickable:hover { border-color: var(--green-hi); background: var(--card2); }
-.space-head { display: flex; align-items: center; gap: 11px; }
+.space-head { display: flex; align-items: center; gap: var(--sp-3); }
 .space-head .spacer { flex: 1; }
 .space-name { font-family: var(--pixel); font-size: 13px; letter-spacing: .5px; padding-top: 3px; }
 
@@ -159,7 +177,7 @@ h2:first-child { margin-top: 0; }
 .space-ico img { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
 .toolbar .space-ico { width: 30px; height: 30px; }
 .chip {
-  font-size: 11px; padding: 3px 10px; border-radius: var(--radius); white-space: nowrap;
+  font-size: 11px; height: var(--chip-h); padding: 0 10px; border-radius: var(--radius); white-space: nowrap;
   background: var(--card2); color: var(--muted); border: 1px solid var(--line);
   font-family: var(--mono); display: inline-flex; align-items: center; gap: 5px;
   font-weight: 700;
@@ -181,15 +199,16 @@ h2:first-child { margin-top: 0; }
   padding: 4px 0; flex-wrap: wrap;
 }
 .corruptbox .cp { font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
-.corruptbox button { padding: 5px 12px; font-size: 11px; }
+.corruptbox button { height: var(--ctl-h-sm); padding: 0 var(--ctl-px-sm); font-size: 11px; }
 
 /* pill di stato del server */
 .status-pill {
   display: inline-flex; align-items: center; gap: 8px; margin-top: 11px;
   font-size: 11.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
-  padding: 5px 12px; border-radius: var(--radius);
+  height: var(--pill-h); padding: 0 12px; border-radius: var(--radius);
 }
 .status-pill .dot { width: 9px; height: 9px; }
+.card > .status-pill:first-child { margin-top: 0; }
 .status-pill.free { background: var(--card2); color: var(--muted); }
 .status-pill.free .dot { background: var(--faint); }
 .status-pill.held { background: var(--green-dim); color: var(--green-txt); }
@@ -205,7 +224,7 @@ h2:first-child { margin-top: 0; }
 /* esito test porta */
 .reach {
   display: inline-flex; align-items: center; gap: 7px; margin-top: 12px;
-  font-size: 12.5px; font-weight: 700; padding: 5px 11px; border-radius: var(--radius);
+  font-size: 12.5px; font-weight: 700; min-height: var(--pill-h); padding: 4px 11px; border-radius: var(--radius);
 }
 .reach.ok { background: var(--green-dim); color: var(--green-txt); }
 .reach.bad { background: var(--red-dim); color: var(--red); }
@@ -216,8 +235,9 @@ button, .btn-cta {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   background: var(--green); color: #fff;
   border: 1px solid var(--green-hi); border-radius: var(--radius);
-  padding: 9px 18px; cursor: pointer; text-decoration: none;
-  font-family: inherit; font-weight: 800; font-size: 12.5px;
+  height: var(--ctl-h); padding: 0 var(--ctl-px); cursor: pointer; text-decoration: none;
+  font-family: inherit; font-weight: 800; font-size: 12.5px; line-height: 1;
+  white-space: nowrap; flex-shrink: 0; vertical-align: middle;
   text-transform: uppercase; letter-spacing: .07em;
   box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .28);
   transition: filter .1s;
@@ -233,15 +253,27 @@ button.danger {
   border: 1px solid #c94a41;
   box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .28);
 }
-button.icon { padding: 7px 10px; }
+/* bottone con sola icona: quadrato, lato = altezza del controllo */
+button.icon, a.btnlike.icon { width: var(--ctl-h); padding: 0; }
+/* variante compatta (header, righe della storia, azioni secondarie) */
+button.sm, a.btnlike.sm, .btn-cta.sm { height: var(--ctl-h-sm); padding: 0 var(--ctl-px-sm); font-size: 11.5px; }
+button.icon.sm, a.btnlike.icon.sm { width: var(--ctl-h-sm); padding: 0; }
 button:disabled { opacity: .4; cursor: default; }
 input, textarea, select {
   background: var(--bg); color: var(--text); border: 1px solid var(--line2);
-  border-radius: var(--radius); padding: 9px 13px; font-size: 14px; width: 100%;
-  font-family: inherit;
+  border-radius: var(--radius); padding: 7px 12px; font-size: 14px; width: 100%;
+  font-family: inherit; line-height: 20px;
 }
+input, select { height: var(--ctl-h); padding-top: 0; padding-bottom: 0; }
+input:focus, select:focus { position: relative; z-index: 1; } /* il bordo del focus sopra il bottone attaccato */
+
+/* campo + bottone attaccati (copia indirizzo, topic): stessa altezza, un
+   solo bordo in comune */
+.joined { display: flex; align-items: stretch; }
+.joined > input { flex: 1 1 auto; min-width: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.joined > button { margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
 input:focus, textarea:focus, select:focus { outline: 2px solid var(--green-hi); border-color: var(--green-hi); }
-.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.row { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
 
 /* ---------- sotto-schede della vista server ---------- */
 .subtabs {
@@ -251,8 +283,8 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--green-hi); 
 .subtab {
   background: none; border: none; box-shadow: none; border-radius: 0;
   color: var(--muted); text-transform: uppercase; letter-spacing: .06em;
-  font-weight: 800; font-size: 12px; padding: 10px 16px;
-  border-bottom: 3px solid transparent; margin-bottom: -1px;
+  font-weight: 800; font-size: 12px; height: 40px; padding: 0 var(--ctl-px);
+  border-bottom: 3px solid transparent; border-top: 3px solid transparent; margin-bottom: -1px;
 }
 .subtab svg { color: var(--faint); }
 .subtab:hover { background: none; filter: none; color: var(--text); }
@@ -261,15 +293,19 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--green-hi); 
 .subtab.active svg { color: var(--green-txt); }
 .tabpane { display: none; }
 .tabpane.active { display: block; }
-@media (max-width: 640px) {
+@media (max-width: 900px) {
   .subtabs { gap: 0; }
-  .subtab { padding: 9px 11px; font-size: 11px; }
+  .subtab { padding: 0 11px; }  /* le cinque schede restano su una riga fino a ~740px */
+}
+@media (max-width: 640px) {
+  .subtab { height: 36px; padding: 0 11px; font-size: 11px; }
 }
 
 /* ---------- card mondo/server: righe chiave-valore ---------- */
 .cardhead {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
-  font-family: var(--pixel); font-size: 12px; letter-spacing: .5px; padding-top: 2px;
+  display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3);
+  min-height: var(--pill-h); /* in riga con la pillola di stato della card accanto */
+  font-family: var(--pixel); font-size: 12px; letter-spacing: .5px; padding-top: 2px; line-height: 1.2;
 }
 .cardhead svg { color: var(--green-txt); }
 .kvrow { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
@@ -280,12 +316,12 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--green-hi); 
 .kvrow .vv.seed:hover { filter: brightness(1.15); }
 
 /* ---------- sezione giocatori ---------- */
-.pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
-.pcard { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
-.phead { display: flex; align-items: center; gap: 11px; margin-bottom: 12px; }
+.pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--sp-3); }
+.pcard { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--card-pad); min-width: 0; }
+.phead { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-3); }
 .identicon { border-radius: var(--radius); image-rendering: pixelated; background: var(--card2); border: 1px solid var(--line); flex-shrink: 0; }
 .pname { font-weight: 800; font-size: 14px; }
-.pbadges { display: flex; gap: 5px; margin-top: 3px; }
+.pbadges { display: flex; gap: var(--sp-1); margin-top: var(--sp-1); }
 .pbadge { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; padding: 2px 6px; border-radius: var(--radius); }
 .pbadge.op { background: var(--amber-dim); color: var(--amber); }
 .pbadge.wl { background: var(--green-dim); color: var(--green-txt); }
@@ -298,7 +334,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--green-hi); 
 .modsearch { margin-bottom: 12px; max-width: 320px; }
 .modlist { display: flex; flex-direction: column; gap: 3px; }
 .modrow {
-  display: flex; align-items: center; gap: 11px; padding: 8px 12px;
+  display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3);
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
   cursor: pointer; transition: border-color .1s, background .1s;
 }
@@ -310,30 +346,33 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--green-hi); 
 .modsize { font-family: var(--mono); font-size: 12px; color: var(--faint); white-space: nowrap; }
 .moddetail {
   background: var(--card); border: 1px solid var(--green-hi); border-top: none;
-  border-radius: 0 0 var(--radius) var(--radius); padding: 14px 16px; margin-bottom: 3px; font-size: 13.5px;
+  border-radius: 0 0 var(--radius) var(--radius); padding: var(--card-pad); margin-bottom: 3px; font-size: 13.5px;
 }
 .moddetail .mline { margin-bottom: 5px; }
 .moddetail .mdesc { color: var(--muted); font-size: 13px; margin: 8px 0; line-height: 1.5; white-space: pre-line; }
-.moddetail .btn-cta { padding: 8px 14px; font-size: 12px; }
 
 /* ---------- indirizzi / copia IP ---------- */
 .hostlist { margin-top: 14px; }
 .hostlist .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; font-weight: 800; }
 .hostaddr {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  display: flex; align-items: stretch; margin-bottom: 6px;
   font-family: var(--mono); font-size: 13.5px; font-weight: 700; color: var(--green-txt);
-  background: var(--bg); border: 1px solid var(--line);
-  border-radius: var(--radius); padding: 7px 8px 7px 12px; margin-bottom: 6px;
-  overflow-wrap: anywhere;
 }
-.hostaddr.primary { border-color: var(--green); border-left-width: 3px; }
-.hostaddr button { flex-shrink: 0; }
+/* l'indirizzo è un campo in sola lettura, il bottone copia è attaccato a
+   destra: stessa altezza (--ctl-h), un solo bordo in comune */
+.hostaddr .addr {
+  flex: 1; min-width: 0; padding: 7px 12px; line-height: 20px; overflow-wrap: anywhere;
+  background: var(--bg); border: 1px solid var(--line2);
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+.hostaddr.primary .addr { border-color: var(--green); border-left-width: 3px; }
+.hostaddr button { height: auto; min-height: var(--ctl-h); margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
 
 /* ---------- giocatori ---------- */
 .players { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
 .player {
   display: inline-flex; align-items: center; gap: 7px;
-  font-size: 12px; font-weight: 800; padding: 4px 11px; border-radius: var(--radius);
+  font-size: 12px; font-weight: 800; height: var(--chip-h); padding: 0 11px; border-radius: var(--radius);
   background: var(--green-dim); color: var(--green-txt);
   text-transform: uppercase; letter-spacing: .04em;
 }
@@ -392,6 +431,10 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--green-hi); 
 .gen.open { background: var(--card); }
 .gen.open .stats { margin-bottom: 2px; }
 .gen.head::before { background: var(--green-hi); }
+/* azioni a destra: larghezza fissa (zip + restore + elimina + freccia), così
+   la colonna centrale — e la barra del peso — è uguale in tutte le righe,
+   anche in quella di HEAD che non ha restore/elimina */
+.gen > .row { flex-wrap: nowrap; justify-content: flex-end; min-width: 200px; }
 .gen .n { font-family: var(--pixel); font-size: 11px; color: var(--green-txt); padding-top: 2px; }
 .gen .meta { font-size: 12.5px; color: var(--muted); }
 .gen .stats { font-family: var(--mono); font-size: 12.5px; font-weight: 700; }
@@ -408,8 +451,8 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--green-hi); 
 a.btnlike {
   display: inline-flex; align-items: center; justify-content: center;
   background: var(--card2); color: var(--text); border: 1px solid var(--line2);
-  border-radius: var(--radius); padding: 7px 10px; text-decoration: none;
-  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .2);
+  border-radius: var(--radius); height: var(--ctl-h); padding: 0 var(--ctl-px); text-decoration: none;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .2); flex-shrink: 0;
 }
 a.btnlike:hover { filter: brightness(1.12); }
 
@@ -446,15 +489,16 @@ a.btnlike:hover { filter: brightness(1.12); }
 .gendiff .size { color: var(--faint); }
 
 /* toolbar di pagina */
-.toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+.toolbar { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-5); }
 .toolbar .crumb { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
 .toolbar .crumb b { color: var(--text); font-family: var(--pixel); font-size: 14px; font-weight: 400; margin-left: 6px; letter-spacing: .5px; }
 .toolbar .spacer { flex: 1; }
-.navbtn { padding: 6px 12px; font-size: 12px; }
+.navbtn { height: var(--ctl-h-sm); padding: 0 var(--ctl-px-sm); font-size: 12px; }
+.navbtn.icon { width: var(--ctl-h-sm); padding: 0; }
 /* selettore lingua IT/EN: due bottoni affiancati, quello attivo in verde */
 .langsw { display: inline-flex; }
 .langsw button {
-  padding: 6px 9px; font-size: 11.5px; border-radius: 0;
+  height: var(--ctl-h-sm); padding: 0 9px; font-size: 11.5px; border-radius: 0;
   background: var(--card2); color: var(--muted); border: 1px solid var(--line2);
   box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .2);
 }
@@ -470,13 +514,13 @@ a.btnlike:hover { filter: brightness(1.12); }
 /* ---------- tab client (download) ---------- */
 .dlhero { max-width: 380px; margin: 26px auto 8px; }
 .dlhero .dlcard { padding: 34px 26px; border-color: var(--green); }
-.dlhero .btn-cta { width: 100%; padding: 12px 18px; font-size: 14px; }
+.dlhero .btn-cta { width: 100%; height: var(--ctl-h-lg); font-size: 14px; }
 .dlothers { max-width: 560px; margin: 22px auto 0; }
 .dlothers .k {
   color: var(--faint); font-size: 11px; text-transform: uppercase;
   letter-spacing: .08em; font-weight: 800; text-align: center; margin-bottom: 10px;
 }
-.dlgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.dlgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--sp-3); }
 .dlcard {
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
   padding: 20px 18px; text-align: center;
@@ -491,14 +535,14 @@ a.btnlike:hover { filter: brightness(1.12); }
 
 /* ---------- impostazioni ---------- */
 .settings { max-width: 680px; margin: 0 auto; }
-.setcard { padding: 18px 20px 20px; }
+.setcard { padding: var(--card-pad-lg); }
 .setcard .cardhead { margin-bottom: 6px; }
 .setcard .sdesc { font-size: 13.5px; line-height: 1.5; margin-bottom: 14px; }
 .setcard .field { display: grid; gap: 6px; margin-top: 16px; }
 .setcard .fhint { font-size: 12px; color: var(--faint); line-height: 1.45; }
-.setcard .inrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.setcard .inrow { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
 .setcard .inrow input { flex: 1 1 220px; min-width: 0; }
-.setcard .inrow button { flex-shrink: 0; padding: 8px 11px; font-size: 11px; }
+.setcard .inrow button { padding: 0 var(--ctl-px-sm); font-size: 11.5px; }
 .setcard fieldset { border: none; padding: 0; margin: 18px 0 0; min-width: 0; }
 .setcard legend {
   font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em;
@@ -522,9 +566,7 @@ a.btnlike:hover { filter: brightness(1.12); }
 }
 .topics .tname > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topics .tname .space-ico { width: 24px; height: 24px; }
-.topics .tin { display: flex; gap: 8px; align-items: center; flex: 999 1 250px; min-width: 0; }
-.topics .tin input { flex: 1 1 auto; min-width: 0; }
-.topics .tin button { flex-shrink: 0; }
+.topics .tin { flex: 999 1 250px; min-width: 0; }
 
 /* checkbox con titolo e descrizione su una riga */
 label.check {
@@ -613,29 +655,45 @@ label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-
   .home-cols { grid-template-columns: 1fr; gap: 4px; }
   .home-cols .events { max-height: none; }
 }
+/* header sotto i 960px: logo, schede, pillola e nome devono stare in
+   una riga — si toglie il testo che ha un sostituto (nome nel logo, stato
+   nel pallino) e si stringono le schede. Il header completo misura ~945px. */
+@media (max-width: 960px) {
+  header { gap: var(--sp-3); }
+  .brand-txt, #conn-txt { display: none; }
+  .tabs { margin-left: var(--sp-2); }
+  .tabs a { padding: 0 12px; }
+  .connpill { padding: 0; }
+}
+@media (max-width: 760px) {
+  .who { display: none; }              /* sotto i 760px il nome non sta più accanto alle schede */
+}
 @media (max-width: 640px) {
   header { padding: 0 12px; height: 52px; gap: 8px; }
   .tabs { margin-left: 2px; }
   .tabs a { padding: 0 7px; font-size: 12px; }
   .tabs .tab-lbl { display: none; }   /* impostazioni: basta l'ingranaggio */
   .tabs a svg { margin-right: 0; }
-  .setcard { padding: 15px 14px 16px; }
+  .setcard { padding: var(--card-pad); }
   .who { display: none; }              /* il nome sta stretto: resta il pallino online */
   .brand-txt { display: none; }        /* resta il logo: serve spazio per lingua e tema */
   .head-right { gap: 6px; }
-  .connpill { padding: 4px 7px; }
+  .connpill { padding: 0; }
   #conn-txt { display: none; }         /* basta il pallino colorato */
-  .langsw button { padding: 5px 7px; }
+  .langsw button { padding: 0 7px; }
   main { padding: 16px 12px 48px; }
   .grid { grid-template-columns: 1fr; }
   .gen { grid-template-columns: 40px 1fr; margin-left: 6px; }
-  .gen > .row { grid-column: 2; justify-content: flex-end; }
+  .gen > .row { grid-column: 2; min-width: 0; }
+  .gen > .row .lbl { display: none; }  /* restore: resta l'icona, il testo nel tooltip */
+  .gen > .row button:not(.icon) { width: var(--ctl-h-sm); padding: 0; }
   .gendiff { margin-left: 6px; padding-left: 16px; }
   .ev { flex-wrap: wrap; row-gap: 2px; }
   .ev .badge { min-width: 0; }
   .toolbar { flex-wrap: wrap; gap: 10px; }
   .rank { grid-template-columns: 78px 1fr 48px; }
   dialog { padding: 20px; }
+  dialog .row > button { flex: 1 1 auto; } /* a capo, i bottoni restano larghi uguali */
 }
 @media (max-width: 380px) {
   /* telefoni piccoli (320px): tre schede, lingua e tema devono stare in una riga */
@@ -644,5 +702,5 @@ label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-
   .tabs a { padding: 0 6px; font-size: 11.5px; }
   .connpill { display: none; }         /* lo stato della connessione resta nelle pagine */
   .head-right { gap: 4px; }
-  .langsw button { padding: 5px 6px; }
+  .langsw button { padding: 0 6px; }
 }

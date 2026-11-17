@@ -1,13 +1,19 @@
 // genicon: genera l'icona MineSync identica al logo della navbar web — cubo in
 // TRATTO BIANCO su quadrato verde #3C8527 arrotondato — come PNG 256x256 e .ico
 // (PNG-in-ICO). Il cubo è in proiezione isometrica esatta: vedi isoCube.
-// Il logo della navbar (icons.box in web/static/app.js) usa lo stesso disegno,
-// tenuto a mano in SVG: se cambi la geometria qui, cambiala anche là.
+// Il logo della navbar (icons.box in web/static/app.js) e la favicon SVG
+// (web/static/favicon.svg) usano lo stesso disegno, tenuto a mano in SVG: se
+// cambi la geometria qui, cambiala anche là.
+//
+// Con -web <dir> scrive anche le favicon della web UI, disegnate alla misura
+// finale (non ridimensionate): favicon.ico (16/32/48), favicon-32.png e
+// apple-touch-icon.png (180, a tutto campo: iOS arrotonda da sé gli angoli).
 package main
 
 import (
 	"bytes"
 	"encoding/binary"
+	"flag"
 	"image"
 	"image/color"
 	"image/draw"
@@ -15,16 +21,16 @@ import (
 	"log"
 	"math"
 	"os"
+	"path/filepath"
 
 	"golang.org/x/image/vector"
 )
 
-const S = 256
-
 type pt struct{ x, y float32 }
 
 func fillPath(dst *image.RGBA, c color.RGBA, build func(r *vector.Rasterizer)) {
-	r := vector.NewRasterizer(S, S)
+	b := dst.Bounds()
+	r := vector.NewRasterizer(b.Dx(), b.Dy())
 	build(r)
 	r.ClosePath()
 	r.Draw(dst, dst.Bounds(), image.NewUniform(c), image.Point{})
@@ -94,21 +100,36 @@ func isoCube(c pt, R float32) [][2]pt {
 	}
 }
 
-func main() {
-	img := image.NewRGBA(image.Rect(0, 0, S, S))
+// render disegna l'icona su una tela quadrata di lato size. Le misure sono
+// quelle della versione 256 (margine 6, raggio 52, cubo a sc 8.2) scalate in
+// proporzione; full = sfondo a tutto campo senza margine né angoli tondi.
+func render(size int, full bool) *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, size, size))
 	draw.Draw(img, img.Bounds(), image.Transparent, image.Point{}, draw.Src)
+	k := float32(size) / 256
+	S := float32(size)
 
 	// sfondo: quadrato arrotondato nel verde della navbar (--green #3c8527)
 	fillPath(img, color.RGBA{0x3c, 0x85, 0x27, 255}, func(r *vector.Rasterizer) {
-		roundedRect(r, 6, 6, S-6, S-6, 52)
+		if full {
+			r.MoveTo(0, 0)
+			r.LineTo(S, 0)
+			r.LineTo(S, S)
+			r.LineTo(0, S)
+			return
+		}
+		roundedRect(r, 6*k, 6*k, S-6*k, S-6*k, 52*k)
 	})
 
 	// cubo bianco centrato, con le proporzioni dell'SVG della navbar (viewBox
 	// 24, circumraggio 10, stroke-width 2). sc < 256/24 perché il cubo dentro
 	// l'icona sta a scale(0.77) come nella favicon: lascia aria sui bordi.
-	const sc = 8.2
+	sc := 8.2 * k
+	if full {
+		sc = 7.2 * k // a tutto campo il cubo resta dentro la maschera arrotondata di iOS
+	}
 	segs := isoCube(pt{S / 2, S / 2}, 10*sc)
-	w := float32(2 * sc)
+	w := 2 * sc
 	// una passata per forma: sovrapposizioni con winding opposto si
 	// annullerebbero dentro lo stesso rasterizer
 	white := color.RGBA{255, 255, 255, 255}
@@ -118,30 +139,68 @@ func main() {
 		fillPath(img, white, func(r *vector.Rasterizer) { disc(r, a, w/2) })
 		fillPath(img, white, func(r *vector.Rasterizer) { disc(r, b, w/2) })
 	}
+	return img
+}
 
-	var pngBuf bytes.Buffer
-	if err := png.Encode(&pngBuf, img); err != nil {
+func encodePNG(img image.Image) []byte {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
 		log.Fatal(err)
 	}
-	os.WriteFile("icon.png", pngBuf.Bytes(), 0o644)
+	return buf.Bytes()
+}
 
-	// ICO: header + una entry PNG 256x256
+// encodeICO impacchetta delle PNG quadrate in un .ico (PNG-in-ICO); 256 si
+// scrive 0 nell'intestazione.
+func encodeICO(sizes []int, pngs [][]byte) []byte {
 	var ico bytes.Buffer
 	binary.Write(&ico, binary.LittleEndian, uint16(0))
 	binary.Write(&ico, binary.LittleEndian, uint16(1))
-	binary.Write(&ico, binary.LittleEndian, uint16(1))
-	ico.WriteByte(0) // 256
-	ico.WriteByte(0) // 256
-	ico.WriteByte(0)
-	ico.WriteByte(0)
-	binary.Write(&ico, binary.LittleEndian, uint16(1))
-	binary.Write(&ico, binary.LittleEndian, uint16(32))
-	binary.Write(&ico, binary.LittleEndian, uint32(pngBuf.Len()))
-	binary.Write(&ico, binary.LittleEndian, uint32(6+16))
-	ico.Write(pngBuf.Bytes())
+	binary.Write(&ico, binary.LittleEndian, uint16(len(pngs)))
+	off := 6 + 16*len(pngs)
+	for i, p := range pngs {
+		d := byte(sizes[i] % 256)
+		ico.WriteByte(d)
+		ico.WriteByte(d)
+		ico.WriteByte(0)
+		ico.WriteByte(0)
+		binary.Write(&ico, binary.LittleEndian, uint16(1))
+		binary.Write(&ico, binary.LittleEndian, uint16(32))
+		binary.Write(&ico, binary.LittleEndian, uint32(len(p)))
+		binary.Write(&ico, binary.LittleEndian, uint32(off))
+		off += len(p)
+	}
+	for _, p := range pngs {
+		ico.Write(p)
+	}
+	return ico.Bytes()
+}
 
-	if err := os.WriteFile("icon.ico", ico.Bytes(), 0o644); err != nil {
+func write(path string, b []byte) {
+	if err := os.WriteFile(path, b, 0o644); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func main() {
+	web := flag.String("web", "", "cartella in cui scrivere anche le favicon della web UI")
+	flag.Parse()
+
+	big := encodePNG(render(256, false))
+	write("icon.png", big)
+	write("icon.ico", encodeICO([]int{256}, [][]byte{big}))
 	log.Println("icon.png + icon.ico generati (stile navbar)")
+
+	if *web == "" {
+		return
+	}
+	sizes := []int{16, 32, 48}
+	var pngs [][]byte
+	for _, n := range sizes {
+		pngs = append(pngs, encodePNG(render(n, false)))
+	}
+	write(filepath.Join(*web, "favicon.ico"), encodeICO(sizes, pngs))
+	write(filepath.Join(*web, "favicon-32.png"), pngs[1])
+	write(filepath.Join(*web, "apple-touch-icon.png"), encodePNG(render(180, true)))
+	log.Println("favicon.ico, favicon-32.png, apple-touch-icon.png in", *web)
 }

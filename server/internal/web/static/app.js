@@ -728,7 +728,7 @@ function fixedAddrBox(sp) {
   const addr = `zerotier.${sp.id}.${DNS_ZONE}`;
   return h("div", { class: "hostlist" },
     h("div", { class: "k" }, t("addr.fixed")),
-    h("div", { class: "hostaddr primary" }, addr,
+    h("div", { class: "hostaddr primary" }, h("span", { class: "addr" }, addr),
       h("button", { class: "ghost icon", title: t("copy"), onclick: () => copyText(addr) }, icon("copy", 14))),
     h("p", { class: "muted", style: "font-size:12.5px;margin-top:6px;line-height:1.5" },
       t("addr.fixedHint")));
@@ -1011,7 +1011,7 @@ function telegramCard(tg, spaces) {
     btn.addEventListener("click", () => sendTest(btn, sp));
     return h("div", { class: "trow" },
       h("label", { class: "tname", for: "tg-topic-" + sp.id }, spaceIcon(sp.id, 22), h("span", { title: sp.name }, sp.name)),
-      h("div", { class: "tin" }, inp, btn));
+      h("div", { class: "tin joined" }, inp, btn));
   });
 
   // Salva si accende solo se qualcosa è cambiato rispetto a quanto salvato
@@ -1236,7 +1236,7 @@ async function viewSpace(id) {
       // solo l'indirizzo ZeroTier (il primo: il client li ordina ZT per primo)
       (() => {
         const addr = sp.lock.info.host.split(",")[0].trim() + ":" + port;
-        return h("div", { class: "hostaddr" }, addr,
+        return h("div", { class: "hostaddr" }, h("span", { class: "addr" }, addr),
           h("button", { class: "ghost icon", title: t("copy"), onclick: () => copyText(addr) }, icon("copy", 14)));
       })()) : null,
     sp.lock ? h("div", { class: "row", style: "margin-top:14px" },
@@ -1256,7 +1256,7 @@ async function viewSpace(id) {
   // --- riquadro amministrazione (le esclusioni sono gestite internamente,
   //     la pulizia delle versioni vecchie è automatica) ---
   const adminCard = !ME?.admin ? null : h("div", { class: "card" },
-    h("div", { class: "k", style: "color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;font-weight:800" }, t("admin.head")),
+    h("div", { class: "cardhead" }, icon("shield", 14), t("admin.head")),
     h("div", { class: "meta-row", style: "margin:0 0 10px" },
       h("span", { class: "m" }, icon("history", 14), h("b", {}, num(gens.length)), tn("admin.versions", gens.length)),
       sp.diskBytes ? h("span", { class: "m" }, icon("server", 14), h("b", {}, fmtBytes(sp.diskBytes)), t("admin.onDisk")) : null),
@@ -1297,13 +1297,8 @@ async function viewSpace(id) {
         h("div", { class: "sizebar" },
           h("span", { style: `width:${Math.max(2, Math.round(100 * (g.stats.bytes || 0) / maxBytes))}%` }))),
       h("div", { class: "row" },
-        h("a", {
-          class: "ghost icon btnlike", title: t("gen.zip"),
-          href: `/api/v1/spaces/${id}/generations/${g.n}/zip`,
-          onclick: (ev) => ev.stopPropagation(),
-        }, icon("download", 14)),
         g.n !== sp.head && ME?.admin ? h("button", {
-          class: "ghost",
+          class: "ghost sm", title: t("gen.restoreBtn"),
           onclick: async (ev) => {
             ev.stopPropagation();
             const ok = await confirmDialog(t("gen.restoreTitle", { n: g.n }),
@@ -1312,9 +1307,9 @@ async function viewSpace(id) {
             try { await api("POST", `/spaces/${id}/restore`, { gen: g.n }); toast(t("gen.restored")); render(); }
             catch (e) { toast(e.message, true); }
           },
-        }, icon("restore", 14), t("gen.restoreBtn")) : null,
+        }, icon("restore", 14), h("span", { class: "lbl" }, t("gen.restoreBtn"))) : null,
         g.n !== sp.head && ME?.admin ? h("button", {
-          class: "danger icon", title: t("gen.deleteTip"),
+          class: "danger icon sm", title: t("gen.deleteTip"),
           onclick: async (ev) => {
             ev.stopPropagation();
             const ok = await confirmDialog(t("gen.deleteTitle", { n: g.n }),
@@ -1324,6 +1319,11 @@ async function viewSpace(id) {
             catch (e) { toast(e.message, true); }
           },
         }, icon("trash", 14)) : null,
+        h("a", {
+          class: "ghost icon sm btnlike", title: t("gen.zip"),
+          href: `/api/v1/spaces/${id}/generations/${g.n}/zip`,
+          onclick: (ev) => ev.stopPropagation(),
+        }, icon("download", 14)),
         icon("chevron", 16)));
     const holder = h("div", {}); // il diff si apre come estensione della riga
     row.addEventListener("click", async () => {
@@ -1380,7 +1380,7 @@ async function viewSpace(id) {
 
   main.replaceChildren(
     h("div", { class: "toolbar" },
-      h("button", { class: "ghost icon", title: t("space.allServers"), onclick: () => go({ page: "home" }) }, icon("arrow", 16)),
+      h("button", { class: "ghost icon sm", title: t("space.allServers"), onclick: () => go({ page: "home" }) }, icon("arrow", 16)),
       spaceIcon(id, 30),
       h("span", { class: "crumb" }, t("space.crumb"), h("b", {}, sp.name)),
       // impronta del modpack nel breadcrumb: versione + numero mod
@@ -1533,7 +1533,7 @@ function modDetail(d) {
   if (d.description) box.append(h("p", { class: "mdesc" }, d.description));
   const links = h("div", { class: "row", style: "margin-top:8px" });
   // solo link http(s): i metadati del jar non sono fidati (niente javascript:)
-  if (d.homepage && /^https?:\/\//i.test(d.homepage)) links.append(h("a", { class: "btn-cta", href: d.homepage, target: "_blank", rel: "noopener noreferrer" },
+  if (d.homepage && /^https?:\/\//i.test(d.homepage)) links.append(h("a", { class: "btn-cta sm", href: d.homepage, target: "_blank", rel: "noopener noreferrer" },
     icon("download", 13), t("mods.site")));
   if (d.license) links.append(h("span", { class: "muted", style: "font-size:12px;align-self:center" }, t("mods.license", { license: d.license })));
   if (links.children.length) box.append(links);
@@ -1560,7 +1560,7 @@ function buildStatsCard(stats) {
 
   const sessions = (stats.sessions || []).length;
   return h("div", { class: "card" },
-    h("div", { class: "k", style: "color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;font-weight:800" }, t("stats.head")),
+    h("div", { class: "cardhead" }, icon("activity", 14), t("stats.head")),
     players.length ? h("div", { class: "rankgroup" },
       h("div", { class: "rk" }, icon("users", 12), t("stats.played")), rank(players, 6)) : null,
     hosts.length ? h("div", { class: "rankgroup" },
