@@ -87,7 +87,6 @@ func (e *Engine) checkDirty(ctx context.Context, local api.Manifest, remote api.
 		return nil, nil // pull interrotto: il locale era pulito quando è partito
 	}
 	var baseFiles api.Manifest
-	known := true // base nota: anche i file spariti in locale sono modifiche
 	switch {
 	case base > 0 && base == remote.Gen:
 		baseFiles = remote.Files
@@ -108,11 +107,9 @@ func (e *Engine) checkDirty(ctx context.Context, local api.Manifest, remote api.
 		if len(local) == 0 {
 			return nil, nil // cartella vuota: niente da perdere
 		}
-		// Base ignota: si confronta con HEAD. Un file dell'hub assente in
-		// locale qui non prova niente (quasi sempre non è mai stato
-		// scaricato) e il pull lo ripristina senza perdite: contano solo i
-		// file locali che l'hub non ha o ha diversi.
-		baseFiles, known = remote.Files, false
+		// Base ignota: si confronta con HEAD (contano solo i file locali
+		// che l'hub non ha o ha diversi, vedi sotto).
+		baseFiles = remote.Files
 	} else if sameContent(local, baseFiles, e.Matcher) {
 		return nil, nil
 	}
@@ -130,7 +127,12 @@ func (e *Engine) checkDirty(ctx context.Context, local api.Manifest, remote api.
 			d.Removed = append(d.Removed, rel)
 		}
 	}
-	if len(d.Changed) == 0 && (len(d.Removed) == 0 || !known) {
+	// Solo i file modificati o aggiunti sono lavoro a rischio. Un file che
+	// manca in locale il pull lo riscarica senza perdite: contarlo bloccherebbe
+	// proprio il caso più comune (cartella svuotata o ricreata con la cache
+	// ancora presente) e suggerirebbe un push che svuoterebbe l'hub. Per
+	// eliminare davvero dei file dall'hub si pusha prima di scaricare.
+	if len(d.Changed) == 0 {
 		return nil, nil
 	}
 	sort.Strings(d.Changed)

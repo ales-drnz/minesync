@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.0.1] - 2026-11-17
+
+### Fixed
+
+- Pulling into an emptied or recreated folder was refused as "local changes never pushed", and the client suggested a push that would have emptied the hub. Files missing locally no longer block a pull (it downloads them again); only files changed or added locally do.
+
 ## [3.0.0] - 2026-11-09
 
 First public release.

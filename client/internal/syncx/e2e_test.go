@@ -116,6 +116,58 @@ func TestModificheLocaliPushFallitoPoiPull(t *testing.T) {
 	checkHeaders(t, hub)
 }
 
+// Cartella svuotata (o ricreata) con la cache ancora presente: i file che
+// mancano in locale non sono lavoro a rischio, il pull deve riscaricarli e
+// non rifiutarsi chiedendo un push (che svuoterebbe l'hub). Se invece c'è
+// anche un file modificato, il pull resta bloccato come sempre.
+func TestCartellaSvuotataSiRipulla(t *testing.T) {
+	hub := fakehub.New()
+	defer hub.Close()
+	hub.Commit(map[string][]byte{"world/level.dat": []byte("v1"), "mods/a.jar": []byte("a"), "server.properties": []byte("p")})
+	eng := newTestEngine(t, hub)
+	ctx := context.Background()
+	if _, err := eng.Pull(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.RemoveAll(eng.LocalPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(eng.LocalPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.Pull(ctx); err != nil {
+		t.Fatalf("pull nella cartella svuotata: %v", err)
+	}
+	if got := readLocal(t, eng, "world/level.dat"); got != "v1" {
+		t.Fatalf("level.dat non riscaricato: %q", got)
+	}
+
+	// solo cancellazioni: si ripulla senza storie
+	os.Remove(filepath.Join(eng.LocalPath, "mods", "a.jar"))
+	if _, err := eng.Pull(ctx); err != nil {
+		t.Fatalf("pull con un file cancellato in locale: %v", err)
+	}
+	if got := readLocal(t, eng, "mods/a.jar"); got != "a" {
+		t.Fatalf("a.jar non riscaricato: %q", got)
+	}
+
+	// cancellazione + modifica: la modifica è lavoro da proteggere
+	os.Remove(filepath.Join(eng.LocalPath, "mods", "a.jar"))
+	writeLocal(t, eng, "world/level.dat", "serata di gioco")
+	_, err := eng.Pull(ctx)
+	var dirty *DirtyLocalError
+	if !errors.As(err, &dirty) {
+		t.Fatalf("pull con una modifica locale: errore = %v, atteso DirtyLocalError", err)
+	}
+	if len(dirty.Changed) != 1 || len(dirty.Removed) != 1 {
+		t.Errorf("modifiche rilevate: %+v", dirty)
+	}
+	if got := readLocal(t, eng, "world/level.dat"); got != "serata di gioco" {
+		t.Fatalf("il pull ha sovrascritto la modifica locale: %q", got)
+	}
+}
+
 // D1 divergente: nel frattempo qualcun altro ha pushato. Il pull rifiuta
 // (Diverged); con DiscardLocal scarta le modifiche locali ma prima le copia
 // nel backup accanto alla cartella dello spazio.
