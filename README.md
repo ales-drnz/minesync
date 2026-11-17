@@ -60,6 +60,10 @@ Who is playing where, the fixed address to join, world details, players, mods an
 <img src="imgs/server.png" alt="Web UI: a server being hosted, with its address and world details" width="49%"> <img src="imgs/history.png" alt="Web UI: history with restore and download" width="49%">
 <img src="imgs/players.png" alt="Web UI: players and their statistics" width="49%"> <img src="imgs/mods.png" alt="Web UI: mods with details" width="49%">
 
+#### Settings: the Telegram bot, with one topic per server
+
+<img src="imgs/settings.png" alt="Web UI: Telegram settings with a topic per server" width="100%">
+
 #### Light theme and Italian, client downloads
 
 <img src="imgs/light-italian.png" alt="Web UI in Italian with the light theme" width="49%"> <img src="imgs/downloads.png" alt="Web UI: client downloads" width="49%">
