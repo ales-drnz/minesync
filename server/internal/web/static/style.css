@@ -90,6 +90,8 @@ header {
   border-bottom: 3px solid transparent; border-top: 3px solid transparent;
 }
 .tabs a:hover { color: var(--text); }
+.tabs a[hidden], [hidden] { display: none !important; }
+.tabs a svg { margin-right: 7px; flex-shrink: 0; }
 .tabs a.active { color: var(--text); border-bottom-color: var(--green-hi); }
 
 .head-right { display: flex; align-items: center; gap: 13px; }
@@ -487,6 +489,80 @@ a.btnlike:hover { filter: brightness(1.12); }
 .dlsteps li { margin: 8px 0; }
 .dlsteps b { color: var(--text); }
 
+/* ---------- impostazioni ---------- */
+.settings { max-width: 680px; margin: 0 auto; }
+.setcard { padding: 18px 20px 20px; }
+.setcard .cardhead { margin-bottom: 6px; }
+.setcard .sdesc { font-size: 13.5px; line-height: 1.5; margin-bottom: 14px; }
+.setcard .field { display: grid; gap: 6px; margin-top: 16px; }
+.setcard .fhint { font-size: 12px; color: var(--faint); line-height: 1.45; }
+.setcard .inrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.setcard .inrow input { flex: 1 1 220px; min-width: 0; }
+.setcard .inrow button { flex-shrink: 0; padding: 8px 11px; font-size: 11px; }
+.setcard fieldset { border: none; padding: 0; margin: 18px 0 0; min-width: 0; }
+.setcard legend {
+  font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em;
+  font-weight: 700; margin-bottom: 6px; padding: 0;
+}
+.setcard .actions { margin-top: 20px; }
+.setcard .unsaved { font-size: 12px; color: var(--amber); font-weight: 700; }
+
+/* checkbox con titolo e descrizione su una riga */
+label.check {
+  display: flex; gap: 10px; align-items: flex-start; cursor: pointer;
+  text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 13.5px; color: var(--text);
+  padding: 7px 0; border-top: 1px solid var(--line);
+}
+label.check:first-of-type { border-top: none; }
+label.check b { font-weight: 700; margin-right: 6px; }
+label.check .muted { font-size: 12.5px; }
+input[type="checkbox"] { width: 16px; height: 16px; padding: 0; margin: 2px 0 0; flex-shrink: 0; accent-color: var(--green-hi); }
+
+/* interruttore attivo/disattivo: checkbox vera (accessibile), disegnata a slitta */
+label.switch {
+  display: inline-flex; align-items: center; gap: 10px; cursor: pointer; margin-top: 16px;
+  text-transform: none; letter-spacing: 0; font-size: 14px; font-weight: 700; color: var(--text);
+}
+label.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+label.switch .track {
+  width: 38px; height: 22px; border-radius: 11px; position: relative; flex-shrink: 0;
+  background: var(--card2); border: 1px solid var(--line2); transition: background .12s;
+}
+label.switch .track::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--muted); transition: transform .12s, background .12s;
+}
+label.switch input:checked + .track { background: var(--green); border-color: var(--green-hi); }
+label.switch input:checked + .track::after { transform: translateX(16px); background: #fff; }
+label.switch input:focus-visible + .track { outline: 2px solid var(--green-hi); outline-offset: 2px; }
+
+/* aiuto compatto (chiuso di default) */
+details.help { font-size: 13px; color: var(--muted); }
+details.help summary { cursor: pointer; color: var(--green-txt); font-weight: 700; font-size: 12.5px; width: fit-content; }
+details.help ol { margin: 8px 0 2px; padding-left: 20px; line-height: 1.55; }
+details.help li { margin: 3px 0; }
+details.help code {
+  font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 0 5px; overflow-wrap: anywhere;
+}
+details.help a { color: var(--green-txt); }
+
+/* stato del bot */
+.tgstatus {
+  display: flex; gap: 9px; align-items: flex-start; font-size: 13px;
+  padding: 8px 12px; border-radius: var(--radius); background: var(--card2);
+}
+.tgstatus .dot { width: 9px; height: 9px; margin-top: 5px; flex-shrink: 0; background: var(--faint); }
+.tgstatus .detail { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; font-weight: 400; }
+.tgstatus.on { background: var(--green-dim); color: var(--green-txt); }
+.tgstatus.on .dot { background: var(--green-hi); }
+.tgstatus.err { background: var(--red-dim); color: var(--red); }
+.tgstatus.err .dot { background: var(--red); }
+.tgstatus.off { color: var(--muted); }
+
+.ev-settings { border-left-color: var(--line2); }
+.ev .badge.settings { background: var(--card2); color: var(--muted); }
+
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
   background: var(--card); border: 1px solid var(--green-hi); color: var(--text);
@@ -519,12 +595,15 @@ label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-
   .home-cols .events { max-height: none; }
 }
 @media (max-width: 640px) {
-  header { padding: 0 12px; height: 52px; gap: 10px; }
+  header { padding: 0 12px; height: 52px; gap: 8px; }
   .tabs { margin-left: 2px; }
-  .tabs a { padding: 0 10px; font-size: 12px; }
+  .tabs a { padding: 0 7px; font-size: 12px; }
+  .tabs .tab-lbl { display: none; }   /* impostazioni: basta l'ingranaggio */
+  .tabs a svg { margin-right: 0; }
+  .setcard { padding: 15px 14px 16px; }
   .who { display: none; }              /* il nome sta stretto: resta il pallino online */
   .brand-txt { display: none; }        /* resta il logo: serve spazio per lingua e tema */
-  .head-right { gap: 8px; }
+  .head-right { gap: 6px; }
   .connpill { padding: 4px 7px; }
   #conn-txt { display: none; }         /* basta il pallino colorato */
   .langsw button { padding: 5px 7px; }

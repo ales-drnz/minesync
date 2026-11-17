@@ -18,6 +18,7 @@ import (
 
 	"minesync/server/internal/events"
 	"minesync/server/internal/i18n"
+	"minesync/server/internal/settings"
 	"minesync/server/internal/store"
 )
 
@@ -71,6 +72,11 @@ type Server struct {
 	// AllowedHosts: nomi host ammessi oltre a IP, localhost, zona DNS e
 	// MINESYNC_HOSTS (anti DNS-rebinding).
 	AllowedHosts []string
+	Settings     *settings.Store // impostazioni modificabili dalla web UI (nil = niente pagina)
+	Telegram     TelegramBot     // bot per la prova e lo stato (può essere nil)
+
+	testMu   sync.Mutex // rate limit dei messaggi di prova
+	lastTest time.Time
 
 	probing    sync.Map // spazi con un test di raggiungibilità già in corso
 	worldCache sync.Map // dati mondo/giocatori/mod in cache per generazione
@@ -115,6 +121,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/spaces/{id}/lock", s.wrap(s.handleLockAcquire, false))
 	mux.HandleFunc("POST /api/v1/spaces/{id}/lock/heartbeat", s.wrap(s.handleLockBeat, false))
 	mux.HandleFunc("DELETE /api/v1/spaces/{id}/lock", s.wrap(s.handleLockRelease, false))
+
+	mux.HandleFunc("GET /api/v1/settings", s.wrap(s.handleGetSettings, true))
+	mux.HandleFunc("PUT /api/v1/settings/telegram", s.wrap(s.handlePutTelegram, true))
+	mux.HandleFunc("POST /api/v1/settings/telegram/test", s.wrap(s.handleTestTelegram, true))
 
 	// download client: PUBBLICO (i binari non sono un segreto)
 	mux.HandleFunc("GET /dl", s.handleDLPage)
@@ -225,6 +235,10 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 		})
 	case errors.As(err, &mbe):
 		jsonError(w, r, http.StatusRequestEntityTooLarge, "corpo della richiesta troppo grande")
+	case errors.Is(err, errUpstream):
+		jsonMsg(w, http.StatusBadGateway, i18n.Localize(lang, err))
+	case errors.Is(err, errTooMany):
+		jsonMsg(w, http.StatusTooManyRequests, i18n.Localize(lang, err))
 	case errors.Is(err, errForbidden):
 		jsonMsg(w, http.StatusForbidden, i18n.Localize(lang, err))
 	case errors.Is(err, store.ErrNotFound):

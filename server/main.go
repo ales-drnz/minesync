@@ -21,6 +21,7 @@ import (
 	"minesync/server/internal/i18n"
 	"minesync/server/internal/mcdns"
 	"minesync/server/internal/notify"
+	"minesync/server/internal/settings"
 	"minesync/server/internal/store"
 	"minesync/server/internal/web"
 	"minesync/server/internal/ztauth"
@@ -115,22 +116,44 @@ func main() {
 		dnsZone = ""
 	}
 
-	// Bot Telegram opzionale: annuncia nel gruppo chi apre e chiude un server.
-	if tg := notify.New(os.Getenv("MINESYNC_TELEGRAM_TOKEN"), os.Getenv("MINESYNC_TELEGRAM_CHAT"),
-		dnsZone, st, bus); tg != nil {
-		bg.Add(1)
-		go func() {
-			defer bg.Done()
-			tg.Run(ctx)
-		}()
-		log.Print(i18n.Lf("bot Telegram attivo (chat %s)", os.Getenv("MINESYNC_TELEGRAM_CHAT")))
-	} else {
-		log.Print(i18n.Lf("bot Telegram non configurato (MINESYNC_TELEGRAM_TOKEN/CHAT)"))
+	// Impostazioni modificabili dalla web UI (settings.json).
+	cfg, err := settings.Open(dataDir)
+	if err != nil {
+		log.Fatalf("settings: %v", err)
 	}
+	migrateTelegramEnv(cfg)
+
+	// Bot Telegram: annuncia nel gruppo chi apre e chiude un server. Gira
+	// sempre; si accende, spegne e riconfigura dalla pagina Impostazioni.
+	tg := notify.New(dnsZone, st, bus)
+	tgCfg, _ := cfg.Telegram()
+	tg.Apply(notify.FromSettings(tgCfg))
+	if !tgCfg.Enabled {
+		log.Print(i18n.Lf("bot Telegram disattivato (si configura da Impostazioni nella web UI)"))
+	}
+	changes := cfg.Subscribe()
+	bg.Add(2)
+	go func() {
+		defer bg.Done()
+		tg.Run(ctx)
+	}()
+	go func() {
+		defer bg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-changes:
+				c, _ := cfg.Telegram()
+				tg.Apply(notify.FromSettings(c))
+			}
+		}
+	}()
 
 	srv := &api.Server{
 		Store: st, ZT: zt, DevUser: devUser, Bus: bus, Web: web.Handler(),
 		Started: time.Now(), DataDir: dataDir, DLDir: dlDir, DNSZone: dnsZone,
+		Settings: cfg, Telegram: tg,
 	}
 	httpSrv := &http.Server{
 		Addr:              addr,
@@ -173,6 +196,25 @@ func main() {
 	}
 	st.Flush()
 	log.Print(i18n.Lf("minesync-hub arrestato"))
+}
+
+// migrateTelegramEnv: fino alla 3.0 il bot si configurava con
+// MINESYNC_TELEGRAM_TOKEN/CHAT. Al primo avvio della 3.1 si importano in
+// settings.json (una volta sola); da lì in poi le variabili si ignorano.
+func migrateTelegramEnv(cfg *settings.Store) {
+	token, chat := os.Getenv("MINESYNC_TELEGRAM_TOKEN"), os.Getenv("MINESYNC_TELEGRAM_CHAT")
+	if token == "" && chat == "" {
+		return
+	}
+	imported, err := cfg.MigrateTelegramEnv(token, chat)
+	switch {
+	case err != nil:
+		log.Print(i18n.Lf("MINESYNC_TELEGRAM_TOKEN/CHAT non importati: %v — configura il bot da Impostazioni nella web UI", err))
+	case imported:
+		log.Print(i18n.Lf("MINESYNC_TELEGRAM_TOKEN/CHAT importati in %s: ora il bot si configura da Impostazioni nella web UI. Le due variabili sono deprecate: toglile dal compose", settings.FileName))
+	default:
+		log.Print(i18n.L("MINESYNC_TELEGRAM_TOKEN/CHAT ignorati: il bot si configura da Impostazioni nella web UI. Le due variabili sono deprecate: toglile dal compose"))
+	}
 }
 
 func envOr(key, def string) string {

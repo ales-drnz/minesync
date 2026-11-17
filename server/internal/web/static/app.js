@@ -184,6 +184,48 @@ const I18N = {
     "ago.m": "{n}m fa",
     "ago.h": "{n}h fa",
     "ago.d": "{n}g fa",
+    "nav.settings": "Impostazioni",
+    "ev.settings": "impostazioni",
+    "set.title": "Impostazioni",
+    "set.tg.title": "Telegram",
+    "set.tg.desc": "Il bot annuncia nel gruppo quando un server apre e chiude, avvisa se i salvataggi non arrivano e risponde a /status.",
+    "set.tg.enable": "Bot attivo",
+    "set.tg.token": "Token del bot",
+    "set.tg.tokenPh": "123456789:ABC… (da @BotFather)",
+    "set.tg.tokenSet": "••••{hint} (impostato)",
+    "set.tg.tokenHint": "Lascia vuoto per non cambiarlo. Il token resta sull'hub: la pagina non lo riceve mai.",
+    "set.tg.clearToken": "rimuovi token",
+    "set.tg.clearTitle": "Rimuovere il token?",
+    "set.tg.clearText": "Il token del bot verrà cancellato dall'hub.",
+    "set.tg.clearTextOn": "Il token del bot verrà cancellato dall'hub e il bot verrà disattivato.",
+    "set.tg.cleared": "Token rimosso",
+    "set.tg.chat": "Chat id",
+    "set.tg.chatPh": "-1001234567890 oppure @canale",
+    "set.tg.help": "Come trovo token e chat id?",
+    "set.tg.help1": "Su Telegram scrivi a {bf}, comando /newbot: ti dà il token.",
+    "set.tg.help2": "Aggiungi il bot al gruppo e scrivi un messaggio qualsiasi.",
+    "set.tg.help3": "Apri {url} e copia il valore di message.chat.id.",
+    "set.tg.help4": "Nei gruppi l'id è negativo (es. -1001234567890); per un canale pubblico va bene anche @nomecanale.",
+    "set.tg.lang": "Lingua dei messaggi",
+    "set.tg.langAuto": "Automatica (lingua dell'hub)",
+    "set.tg.notify": "Cosa annunciare",
+    "set.tg.n.open": "Server aperto",
+    "set.tg.n.openD": "chi hosta e l'indirizzo per entrare",
+    "set.tg.n.close": "Server chiuso",
+    "set.tg.n.closeD": "con la durata della sessione, anche se il PC di chi hosta si spegne",
+    "set.tg.n.alerts": "Avvisi",
+    "set.tg.n.alertsD": "un server aperto ha smesso di salvare sull'hub",
+    "set.tg.n.status": "Comando /status",
+    "set.tg.n.statusD": "il bot risponde nel gruppo con lo stato dei server",
+    "set.save": "Salva",
+    "set.saved": "Impostazioni salvate",
+    "set.test": "Invia messaggio di prova",
+    "set.testSent": "Messaggio di prova inviato",
+    "set.st.disabled": "Disattivato",
+    "set.st.active": "Attivo · chat {chat}",
+    "set.st.error": "Errore",
+    "set.st.lastSent": "ultimo messaggio {ago}",
+    "set.st.unsaved": "modifiche non salvate",
   },
   en: {
     "nav.home": "Servers",
@@ -353,6 +395,48 @@ const I18N = {
     "ago.m": "{n}m ago",
     "ago.h": "{n}h ago",
     "ago.d": "{n}d ago",
+    "nav.settings": "Settings",
+    "ev.settings": "settings",
+    "set.title": "Settings",
+    "set.tg.title": "Telegram",
+    "set.tg.desc": "The bot announces in your group when a server opens and closes, warns when saves stop arriving and answers /status.",
+    "set.tg.enable": "Bot enabled",
+    "set.tg.token": "Bot token",
+    "set.tg.tokenPh": "123456789:ABC… (from @BotFather)",
+    "set.tg.tokenSet": "••••{hint} (set)",
+    "set.tg.tokenHint": "Leave empty to keep it. The token stays on the hub: this page never receives it.",
+    "set.tg.clearToken": "remove token",
+    "set.tg.clearTitle": "Remove the token?",
+    "set.tg.clearText": "The bot token will be deleted from the hub.",
+    "set.tg.clearTextOn": "The bot token will be deleted from the hub and the bot will be disabled.",
+    "set.tg.cleared": "Token removed",
+    "set.tg.chat": "Chat id",
+    "set.tg.chatPh": "-1001234567890 or @channel",
+    "set.tg.help": "How do I find the token and the chat id?",
+    "set.tg.help1": "On Telegram, message {bf} and send /newbot: it gives you the token.",
+    "set.tg.help2": "Add the bot to your group and send any message there.",
+    "set.tg.help3": "Open {url} and copy the value of message.chat.id.",
+    "set.tg.help4": "Group ids are negative (e.g. -1001234567890); for a public channel @channelname works too.",
+    "set.tg.lang": "Message language",
+    "set.tg.langAuto": "Automatic (hub language)",
+    "set.tg.notify": "What to announce",
+    "set.tg.n.open": "Server opened",
+    "set.tg.n.openD": "who is hosting and the address to join",
+    "set.tg.n.close": "Server closed",
+    "set.tg.n.closeD": "with the session length, even if the host's PC dies",
+    "set.tg.n.alerts": "Warnings",
+    "set.tg.n.alertsD": "an open server stopped saving to the hub",
+    "set.tg.n.status": "/status command",
+    "set.tg.n.statusD": "the bot replies in the group with the state of every server",
+    "set.save": "Save",
+    "set.saved": "Settings saved",
+    "set.test": "Send test message",
+    "set.testSent": "Test message sent",
+    "set.st.disabled": "Disabled",
+    "set.st.active": "Active · chat {chat}",
+    "set.st.error": "Error",
+    "set.st.lastSent": "last message {ago}",
+    "set.st.unsaved": "unsaved changes",
   },
 };
 const LANGS = ["it", "en"];
@@ -418,6 +502,8 @@ const ICONS = {
   moon: `<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>`,
   arrow: `<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>`,
   alert: `<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>`,
+  settings: `<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>`,
+  send: `<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>`,
   shield: `<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1Z"/>`,
 };
 function icon(name, size = 16) {
@@ -426,13 +512,18 @@ function icon(name, size = 16) {
   return span.firstChild;
 }
 $("#logo").append(icon("box", 19));
+$("#tab-settings").prepend(icon("settings", 15));
 
 /* ---------- nav: tab + tema ---------- */
 $("#tab-home").addEventListener("click", (e) => { e.preventDefault(); go({ page: "home" }); });
 $("#tab-dl").addEventListener("click", (e) => { e.preventDefault(); go({ page: "dl" }); });
+$("#tab-settings").addEventListener("click", (e) => { e.preventDefault(); go({ page: "settings" }); });
 function markTab() {
-  $("#tab-home").classList.toggle("active", route.page !== "dl");
+  $("#tab-home").classList.toggle("active", route.page === "home" || route.page === "space");
   $("#tab-dl").classList.toggle("active", route.page === "dl");
+  $("#tab-settings").classList.toggle("active", route.page === "settings");
+  // le impostazioni sono solo per gli admin
+  $("#tab-settings").hidden = !ME?.admin;
 }
 
 function applyTheme() {
@@ -637,12 +728,14 @@ function connectSSE() {
 
 // niente ridisegno automatico se l'utente sta leggendo un diff o scrivendo
 function canAutoRefresh() {
-  // niente ridisegno se l'utente sta leggendo un diff, un'anteprima mod o scrivendo
+  // niente ridisegno se l'utente sta leggendo un diff, un'anteprima mod o scrivendo;
+  // mai sulle impostazioni: un evento non deve buttare via un modulo a metà
+  if (route.page === "settings") return false;
   if (document.querySelector(".gendiff") || document.querySelector(".moddetail")) return false;
   const a = document.activeElement;
   return !a || !["INPUT", "TEXTAREA", "SELECT"].includes(a.tagName);
 }
-const EV_TYPES = ["push", "lock", "unlock", "force", "restore", "gc", "space"];
+const EV_TYPES = ["push", "lock", "unlock", "force", "restore", "gc", "space", "settings"];
 // testo di un evento: msg arriva già nella lingua della richiesta (l'hub lo
 // rende da key/args quando ci sono; ?lang= sullo stream SSE, Accept-Language
 // sulla lista). Unico punto da cambiare se un giorno si renderà qui.
@@ -822,6 +915,150 @@ async function viewDl() {
       h("li", {}, tx("dl.step2", { key: h("b", {}, "G") })),
       h("li", {}, t("dl.step3"))),
   ].filter(Boolean));
+}
+
+/* ---------- impostazioni (solo admin) ----------
+   Il token del bot non arriva mai nella pagina: l'hub dice solo se è
+   impostato e le ultime 4 cifre. Campo token vuoto = token invariato. */
+async function viewSettings() {
+  const data = await api("GET", "/settings");
+  main.replaceChildren(h("div", { class: "settings" },
+    h("h2", {}, icon("settings", 15), t("set.title")),
+    telegramCard(data.telegram)));
+}
+
+const NOTIFY_KEYS = ["open", "close", "alerts", "status"];
+
+// riga di stato del bot: disattivato / attivo / errore (ultimo errore di Telegram)
+function tgStatus(tg) {
+  let cls = "off", txt = t("set.st.disabled"), detail = null;
+  if (tg.state === "active") {
+    cls = "on";
+    txt = t("set.st.active", { chat: tg.chatId });
+    if (tg.lastSentAt) detail = t("set.st.lastSent", { ago: ago(tg.lastSentAt) });
+  } else if (tg.state === "error") {
+    cls = "err";
+    txt = t("set.st.error");
+    detail = tg.lastError + (tg.lastErrorAt ? " · " + ago(tg.lastErrorAt) : "");
+  }
+  return h("div", { class: "tgstatus " + cls }, h("span", { class: "dot" }),
+    h("div", {}, h("b", {}, txt), detail ? h("div", { class: "detail" }, detail) : null));
+}
+
+function field(label, id, ...children) {
+  return h("div", { class: "field" }, h("label", { for: id }, label), ...children);
+}
+
+function telegramCard(tg) {
+  const enabled = h("input", { type: "checkbox", id: "tg-enabled", role: "switch" });
+  enabled.checked = !!tg.enabled;
+  const token = h("input", {
+    type: "password", id: "tg-token", autocomplete: "off", spellcheck: "false",
+    placeholder: tg.tokenSet ? t("set.tg.tokenSet", { hint: tg.tokenHint || "" }) : t("set.tg.tokenPh"),
+  });
+  const chat = h("input", { id: "tg-chat", autocomplete: "off", spellcheck: "false", placeholder: t("set.tg.chatPh") });
+  chat.value = tg.chatId || "";
+  const lang = h("select", { id: "tg-lang" },
+    h("option", { value: "" }, t("set.tg.langAuto")),
+    h("option", { value: "it", lang: "it" }, "Italiano"),
+    h("option", { value: "en", lang: "en" }, "English"));
+  lang.value = tg.lang || "";
+  const flags = {};
+  const notifyRows = NOTIFY_KEYS.map((k) => {
+    const cb = h("input", { type: "checkbox", id: "tg-n-" + k });
+    cb.checked = !!tg.notify?.[k];
+    flags[k] = cb;
+    return h("label", { class: "check", for: "tg-n-" + k }, cb,
+      h("span", {}, h("b", {}, t("set.tg.n." + k)), h("span", { class: "muted" }, t("set.tg.n." + k + "D"))));
+  });
+
+  // Salva si accende solo se qualcosa è cambiato rispetto a quanto salvato
+  const formState = () => ({
+    enabled: enabled.checked, chatId: chat.value.trim(), lang: lang.value,
+    notify: Object.fromEntries(NOTIFY_KEYS.map((k) => [k, flags[k].checked])),
+  });
+  const initial = JSON.stringify({
+    enabled: !!tg.enabled, chatId: tg.chatId || "", lang: tg.lang || "",
+    notify: Object.fromEntries(NOTIFY_KEYS.map((k) => [k, !!tg.notify?.[k]])),
+  });
+  const save = h("button", { disabled: "" }, t("set.save"));
+  const unsaved = h("span", { class: "unsaved", hidden: "" }, t("set.st.unsaved"));
+  const refresh = () => {
+    const dirty = token.value.trim() !== "" || JSON.stringify(formState()) !== initial;
+    save.disabled = !dirty;
+    unsaved.hidden = !dirty;
+  };
+  for (const el of [enabled, token, chat, lang, ...Object.values(flags)]) {
+    el.addEventListener("input", refresh);
+    el.addEventListener("change", refresh);
+  }
+
+  let card = null;
+  const redraw = (next) => { const c = telegramCard(next); card.replaceWith(c); card = c; };
+  save.addEventListener("click", async () => {
+    const body = formState();
+    if (token.value.trim()) body.token = token.value.trim();
+    save.disabled = true;
+    try {
+      const res = await api("PUT", "/settings/telegram", body);
+      toast(t("set.saved"));
+      redraw(res.telegram);
+    } catch (e) { toast(e.message, true); refresh(); }
+  });
+
+  let statusBox = tgStatus(tg);
+  // prova con quello che c'è nel modulo, anche se non salvato (l'hub non lo salva)
+  const testBtn = h("button", { class: "ghost" }, icon("send", 14), t("set.test"));
+  testBtn.addEventListener("click", async () => {
+    const body = { chatId: chat.value.trim(), lang: lang.value };
+    if (token.value.trim()) body.token = token.value.trim();
+    testBtn.disabled = true;
+    try {
+      await api("POST", "/settings/telegram/test", body);
+      toast(t("set.testSent"));
+    } catch (e) { toast(e.message, true); }
+    testBtn.disabled = false;
+    // l'esito aggiorna lo stato del bot (ultimo invio / ultimo errore)
+    try {
+      const d = await api("GET", "/settings");
+      const s = tgStatus(d.telegram);
+      statusBox.replaceWith(s);
+      statusBox = s;
+    } catch { /* lo stato resta quello di prima */ }
+  });
+
+  const clearBtn = !tg.tokenSet ? null : h("button", { class: "ghost", type: "button" }, icon("trash", 13), t("set.tg.clearToken"));
+  clearBtn?.addEventListener("click", async () => {
+    const ok = await confirmDialog(t("set.tg.clearTitle"),
+      t(tg.enabled ? "set.tg.clearTextOn" : "set.tg.clearText"), t("set.tg.clearToken"), true);
+    if (!ok) return;
+    try {
+      const res = await api("PUT", "/settings/telegram", { clearToken: true, enabled: false });
+      toast(t("set.tg.cleared"));
+      redraw(res.telegram);
+    } catch (e) { toast(e.message, true); }
+  });
+
+  const help = h("details", { class: "help" },
+    h("summary", {}, t("set.tg.help")),
+    h("ol", {},
+      h("li", {}, tx("set.tg.help1", { bf: h("a", { href: "https://t.me/BotFather", target: "_blank", rel: "noopener noreferrer" }, "@BotFather") })),
+      h("li", {}, t("set.tg.help2")),
+      h("li", {}, tx("set.tg.help3", { url: h("code", {}, "https://api.telegram.org/bot<TOKEN>/getUpdates") })),
+      h("li", {}, t("set.tg.help4"))));
+
+  card = h("div", { class: "card setcard" },
+    h("div", { class: "cardhead" }, icon("send", 15), t("set.tg.title")),
+    h("p", { class: "muted sdesc" }, t("set.tg.desc")),
+    statusBox,
+    h("label", { class: "switch", for: "tg-enabled" }, enabled, h("span", { class: "track" }), h("span", {}, t("set.tg.enable"))),
+    field(t("set.tg.token"), "tg-token", h("div", { class: "inrow" }, token, clearBtn),
+      h("div", { class: "fhint" }, t("set.tg.tokenHint"))),
+    field(t("set.tg.chat"), "tg-chat", chat, help),
+    field(t("set.tg.lang"), "tg-lang", lang),
+    h("fieldset", {}, h("legend", {}, t("set.tg.notify")), notifyRows),
+    h("div", { class: "row actions" }, save, testBtn, unsaved));
+  return card;
 }
 
 function newSpaceDialog() {
@@ -1292,6 +1529,7 @@ async function render() {
   try {
     if (route.page === "space") await viewSpace(route.id);
     else if (route.page === "dl") await viewDl();
+    else if (route.page === "settings" && ME.admin) await viewSettings();
     else await viewHome();
   } catch (e) {
     if (e.status !== 401) toast(e.message, true);

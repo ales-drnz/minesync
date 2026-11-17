@@ -3,11 +3,13 @@ package notify
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,18 +17,41 @@ import (
 	"minesync/server/internal/store"
 )
 
-// fakeTG finge le API di Telegram e raccoglie i testi inviati.
+// fakeTG finge le API di Telegram e raccoglie i messaggi inviati.
 type fakeTG struct {
 	*httptest.Server
-	msgs chan string
+	msgs     chan sent
+	cmds     chan tgCmd // comandi da consegnare al prossimo getUpdates
+	polls    atomic.Int64
+	sendCode atomic.Int64 // status di sendMessage (0 = 200)
+}
+
+type sent struct{ chat, text string }
+
+type tgCmd struct {
+	chat int64
+	text string
 }
 
 func newFakeTG(t *testing.T) *fakeTG {
 	t.Helper()
-	f := &fakeTG{msgs: make(chan string, 16)}
+	f := &fakeTG{msgs: make(chan sent, 16), cmds: make(chan tgCmd, 4)}
+	var upd atomic.Int64
 	f.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/getUpdates") {
-			w.Write([]byte(`{"ok":true,"result":[]}`)) // il poller non ha comandi
+			f.polls.Add(1)
+			select {
+			case c := <-f.cmds:
+				fmt.Fprintf(w, `{"ok":true,"result":[{"update_id":%d,"message":{"text":%q,"chat":{"id":%d}}}]}`,
+					upd.Add(1), c.text, c.chat)
+			default:
+				w.Write([]byte(`{"ok":true,"result":[]}`)) // nessun comando
+			}
+			return
+		}
+		if c := f.sendCode.Load(); c != 0 {
+			w.WriteHeader(int(c))
+			w.Write([]byte(`{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`))
 			return
 		}
 		body, _ := io.ReadAll(r.Body)
@@ -37,10 +62,7 @@ func newFakeTG(t *testing.T) *fakeTG {
 		if err := json.Unmarshal(body, &req); err != nil {
 			t.Errorf("body non JSON: %v", err)
 		}
-		if req.ChatID != "-100999" {
-			t.Errorf("chat_id = %q", req.ChatID)
-		}
-		f.msgs <- req.Text
+		f.msgs <- sent{req.ChatID, req.Text}
 		w.Write([]byte(`{"ok":true}`))
 	}))
 	t.Cleanup(f.Close)
@@ -50,8 +72,18 @@ func newFakeTG(t *testing.T) *fakeTG {
 // want attende un messaggio e verifica che contenga tutti i frammenti.
 func (f *fakeTG) want(t *testing.T, frags ...string) {
 	t.Helper()
+	f.wantIn(t, "-100999", frags...)
+}
+
+// wantIn attende un messaggio nella chat indicata.
+func (f *fakeTG) wantIn(t *testing.T, chat string, frags ...string) {
+	t.Helper()
 	select {
-	case msg := <-f.msgs:
+	case m := <-f.msgs:
+		msg := m.text
+		if m.chat != chat {
+			t.Errorf("chat_id = %q, attesa %q", m.chat, chat)
+		}
 		for _, s := range frags {
 			if !strings.Contains(msg, s) {
 				t.Errorf("messaggio %q: manca %q", msg, s)
@@ -65,8 +97,8 @@ func (f *fakeTG) want(t *testing.T, frags ...string) {
 func (f *fakeTG) wantSilence(t *testing.T) {
 	t.Helper()
 	select {
-	case msg := <-f.msgs:
-		t.Fatalf("messaggio inatteso: %q", msg)
+	case m := <-f.msgs:
+		t.Fatalf("messaggio inatteso in %s: %q", m.chat, m.text)
 	case <-time.After(200 * time.Millisecond):
 	}
 }
@@ -83,9 +115,16 @@ func setup(t *testing.T) (*store.Store, *events.Bus, *Telegram, *fakeTG) {
 	}
 	bus := events.NewBus(filepath.Join(dir, "events.jsonl"))
 	f := newFakeTG(t)
-	tg := New("tok", "-100999", "internal", st, bus)
+	tg := New("internal", st, bus)
 	tg.base = f.URL
+	tg.Apply(fullCfg())
 	return st, bus, tg, f
+}
+
+// fullCfg: bot attivo con tutte le notifiche.
+func fullCfg() Config {
+	return Config{Enabled: true, Token: "tok", ChatID: "-100999",
+		Open: true, Close: true, Alerts: true, Status: true}
 }
 
 func TestApreEChiude(t *testing.T) {
@@ -238,8 +277,14 @@ func TestPushWatchdog(t *testing.T) {
 }
 
 func TestSenzaConfigDisattivo(t *testing.T) {
-	if New("", "-100999", "", nil, nil) != nil || New("tok", "", "", nil, nil) != nil {
-		t.Error("senza token o chat il bot deve restare spento")
+	for _, c := range []Config{
+		{Enabled: true, ChatID: "-100999"},
+		{Enabled: true, Token: "tok"},
+		{Token: "tok", ChatID: "-100999"},
+	} {
+		if c.active() {
+			t.Errorf("%+v: senza token, chat o enabled il bot deve restare spento", c)
+		}
 	}
 }
 

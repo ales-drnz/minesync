@@ -11,7 +11,9 @@ import (
 // Il bot parla la lingua dell'hub (MINESYNC_LANG/LANG).
 func TestMessagesEnglish(t *testing.T) {
 	st, _, tg, _ := setup(t)
-	tg.lang = i18n.EN
+	c := fullCfg()
+	c.Lang = i18n.EN
+	tg.Apply(c)
 	msg := tg.openMsg("miomondo", &store.LockInfo{Owner: "steve"})
 	if !strings.Contains(msg, "<b>miomondo</b> is open") || !strings.Contains(msg, "hosted by <b>steve</b>") {
 		t.Fatalf("openMsg EN: %q", msg)

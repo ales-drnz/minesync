@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.1.0] - 2026-11-17
+
+### Added
+
+- **Settings** page in the web UI (admins only). Its first section configures the Telegram bot: on/off, token, chat id, message language, and which messages to send (server opened, server closed, warnings, replies to `/status`), with a test message and the bot's last error.
+- `GET /api/v1/settings`, `PUT /api/v1/settings/telegram`, `POST /api/v1/settings/telegram/test`. The token is never returned by the API.
+- Settings are stored in `/data/settings.json` (atomic write, mode `0600`). Changing them logs an event in the activity feed.
+
+### Changed
+
+- The Telegram bot is configured from the web UI instead of environment variables, and every change applies immediately without restarting the hub. Open sessions are still tracked while the bot is off, so the closing message keeps the session length.
+- Telegram errors now include Telegram's own description (e.g. `chat not found`), and configuration errors (bad token, bad chat) are no longer retried.
+
+### Upgrading from 3.0
+
+- `MINESYNC_TELEGRAM_TOKEN` and `MINESYNC_TELEGRAM_CHAT` are deprecated. On the first start of 3.1 they are imported into the settings (bot enabled) and the hub logs a notice; afterwards they are ignored and can be removed from the compose file.
+
 ## [3.0.1] - 2026-11-17
 
 ### Fixed

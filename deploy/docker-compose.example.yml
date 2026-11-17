@@ -30,7 +30,7 @@ services:
     environment:
       - TZ=Europe/Rome
       - MINESYNC_ADDR=:8084
-      # Language of the Telegram bot and of the logs: en or it
+      # Language of the logs and default language of the Telegram bot: en or it
       # (the web UI and the clients follow each user's own language).
       - MINESYNC_LANG=en
 
@@ -62,14 +62,9 @@ services:
       # - MINESYNC_DNS_ADDR=<hub-zerotier-ip>:53
 
       # ── Telegram bot (optional) ──
-      # Announces when a server opens and closes.
-      #   1) talk to @BotFather → /newbot → it gives you the TOKEN
-      #   2) add the bot to your group
-      #   3) write any message in the group, then open
-      #      https://api.telegram.org/bot<TOKEN>/getUpdates and copy
-      #      result[0].message.chat.id (negative for groups, e.g. -1001234567890)
-      # - MINESYNC_TELEGRAM_TOKEN=<bot-token>
-      # - MINESYNC_TELEGRAM_CHAT=<chat-id>
+      # Configured from the web UI: Settings → Telegram (admins only).
+      # MINESYNC_TELEGRAM_TOKEN/CHAT are deprecated: 3.1 imports them once
+      # into /data/settings.json, then ignores them. Remove them.
 
 volumes:
   minesync_data:

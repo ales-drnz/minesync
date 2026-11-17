@@ -42,6 +42,7 @@ Because authority is ambient (any page in a member's browser comes from the memb
 ```
 /data/
   events.jsonl                 append-only event log
+  settings.json                hub settings edited from the web UI (mode 0600): {telegram:{enabled, token, chatId, lang, notify{open,close,alerts,status}}}
   spaces/<id>/
     space.json                 {id, name, profile, ignore[], createdAt}
     HEAD                       current generation number
@@ -75,6 +76,9 @@ Because authority is ambient (any page in a member's browser comes from the memb
 | `POST /api/v1/spaces/{id}/lock` · `/lock/heartbeat` · `DELETE …/lock` | acquire · renew · release |
 | `GET /api/v1/spaces/{id}/world` · `/players` · `/mods[/{file}[/icon]]` · `/stats` | world metadata for the web UI |
 | `GET /api/v1/events[?stream=1]` | recent events · live SSE |
+| `GET /api/v1/settings` | hub settings (admin); the bot token is never returned, only `tokenSet` and `tokenHint` (last 4 characters) |
+| `PUT /api/v1/settings/telegram` | partial update of the Telegram bot (admin); empty `token` = unchanged, `clearToken: true` removes it; applied live |
+| `POST /api/v1/settings/telegram/test` | send a test message (admin) with the saved config, or with `token`/`chatId`/`lang` from the body without saving them; one every 3 s |
 | `GET /dl`, `GET /dl/{file}` | client downloads, `SHA256SUMS`, `SHA256SUMS.sig` |
 
 Rules:

@@ -210,6 +210,27 @@ var catalogEN = map[string]string{
 
 	"telegram: annuncio non inviato: %v": "telegram: announcement not sent: %v",
 
+	"✅ <b>MineSync</b>: messaggio di prova. Il bot è configurato correttamente.": "✅ <b>MineSync</b>: test message. The bot is configured correctly.",
+
+	// --- impostazioni (settings.json, pagina Impostazioni) ---
+	"%s non valido: %v": "%s is invalid: %v",
+
+	"%w: token del bot non valido (formato 123456789:ABC…, lo dà @BotFather)": "%w: invalid bot token (format 123456789:ABC…, given by @BotFather)",
+
+	"%w: chat id non valido (es. -1001234567890 oppure @nomecanale)": "%w: invalid chat id (e.g. -1001234567890 or @channelname)",
+
+	"%w: lingua non valida (it, en o vuota)": "%w: invalid language (it, en or empty)",
+
+	"%w: per attivare il bot servono token e chat id": "%w: enabling the bot requires a token and a chat id",
+
+	"%w: per il messaggio di prova servono token e chat id": "%w: the test message needs a token and a chat id",
+
+	"%s ha modificato le impostazioni di Telegram": "%s changed the Telegram settings",
+
+	"invio non riuscito": "sending failed",
+
+	"troppi messaggi di prova: riprova tra qualche secondo": "too many test messages: try again in a few seconds",
+
 	// --- log dell'hub ---
 	"impossibile creare %s: %v": "cannot create %s: %v",
 
@@ -233,7 +254,15 @@ var catalogEN = map[string]string{
 
 	"bot Telegram attivo (chat %s)": "Telegram bot enabled (chat %s)",
 
-	"bot Telegram non configurato (MINESYNC_TELEGRAM_TOKEN/CHAT)": "Telegram bot not configured (MINESYNC_TELEGRAM_TOKEN/CHAT)",
+	"bot Telegram disattivato": "Telegram bot disabled",
+
+	"bot Telegram disattivato (si configura da Impostazioni nella web UI)": "Telegram bot disabled (configure it from Settings in the web UI)",
+
+	"MINESYNC_TELEGRAM_TOKEN/CHAT non importati: %v — configura il bot da Impostazioni nella web UI": "MINESYNC_TELEGRAM_TOKEN/CHAT not imported: %v — configure the bot from Settings in the web UI",
+
+	"MINESYNC_TELEGRAM_TOKEN/CHAT importati in %s: ora il bot si configura da Impostazioni nella web UI. Le due variabili sono deprecate: toglile dal compose": "MINESYNC_TELEGRAM_TOKEN/CHAT imported into %s: the bot is now configured from Settings in the web UI. Both variables are deprecated: remove them from the compose file",
+
+	"MINESYNC_TELEGRAM_TOKEN/CHAT ignorati: il bot si configura da Impostazioni nella web UI. Le due variabili sono deprecate: toglile dal compose": "MINESYNC_TELEGRAM_TOKEN/CHAT ignored: the bot is configured from Settings in the web UI. Both variables are deprecated: remove them from the compose file",
 
 	"host ammessi oltre a IP/localhost/zona DNS: %s": "allowed hosts besides IP/localhost/DNS zone: %s",
 

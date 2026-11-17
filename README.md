@@ -112,7 +112,7 @@ volumes:
 
 Then open `http://<hub-zerotier-ip>:8084`. Friends download the client from `http://<hub-zerotier-ip>:8084/dl`.
 
-A fully commented example (DNS, Telegram, building from source, running with your own UID) is in [deploy/docker-compose.example.yml](deploy/docker-compose.example.yml).
+A fully commented example (DNS, building from source, running with your own UID) is in [deploy/docker-compose.example.yml](deploy/docker-compose.example.yml).
 
 ## Requirements
 
@@ -137,8 +137,7 @@ A fully commented example (DNS, Telegram, building from source, running with you
 | `MINESYNC_HOSTS` | — | Extra host names allowed to reach the hub (e.g. `minesync.lan`); IP addresses and names in the DNS zone are always allowed |
 | `MINESYNC_DNS_ZONE` | `internal` | Zone for the fixed addresses, see [§5](#5-a-fixed-address-for-everyone-dns) |
 | `MINESYNC_DNS_ADDR` | `:53` | DNS listen address, `off` to disable |
-| `MINESYNC_TELEGRAM_TOKEN` / `MINESYNC_TELEGRAM_CHAT` | — | Optional bot, see [§6](#6-telegram-announcements) |
-| `MINESYNC_LANG` | from `LANG`, else `en` | Language of the Telegram bot and of the hub's logs: `en` or `it` |
+| `MINESYNC_LANG` | from `LANG`, else `en` | Language of the hub's logs and default language of the Telegram bot: `en` or `it` |
 | `MINESYNC_DL` | `/opt/dl` | Folder with the client binaries served on `/dl` |
 | `MINESYNC_DEV_USER` | — | **Development only**: authenticates loopback requests as this admin |
 
@@ -204,7 +203,16 @@ Port 53 is privileged: the image already allows the binary to bind it. If you ru
 📡 10.147.17.20
 ```
 
-Set `MINESYNC_TELEGRAM_TOKEN` (from [@BotFather](https://t.me/BotFather)) and `MINESYNC_TELEGRAM_CHAT` (the group id, negative). How to find the id is explained in the compose example. If the host's PC dies, the hub still announces the closing when the lock expires.
+The bot is configured by an admin from the web UI: **Settings** (the gear in the header, visible to admins only) → **Telegram**.
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) (`/newbot`) and paste its token.
+2. Add the bot to your group, send any message there, open `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy `message.chat.id` (negative for groups, e.g. `-1001234567890`; `@channelname` works for a public channel).
+3. Pick the language of the messages (automatic = `MINESYNC_LANG`) and what to announce: server opened, server closed, warnings (an open server stopped saving to the hub), replies to `/status`.
+4. **Send test message**, then turn the bot on and save. Changes apply immediately, without restarting the hub.
+
+If the host's PC dies, the hub still announces the closing when the lock expires. The settings live in `/data/settings.json` (mode `0600`); the token never leaves the hub: the web UI only sees whether it is set and its last four characters.
+
+**Upgrading from 3.0:** if `MINESYNC_TELEGRAM_TOKEN` and `MINESYNC_TELEGRAM_CHAT` are still set, the first start of 3.1 imports them into the settings (bot enabled) and logs that they are deprecated. From then on they are ignored: remove them from your compose file.
 
 ### 7. Signed client updates
 
@@ -250,7 +258,7 @@ Everything a user sees exists in English and Italian.
 
 - **Client**: `MINESYNC_LANG=en|it` if set, otherwise the language saved in the TUI, otherwise the system language (falls back to English). Switch it from the home screen of the TUI (see **?**); the choice is saved.
 - **Web UI**: follows the browser, with an EN/IT selector in the header that is remembered.
-- **Hub**: API errors and the `/dl` page follow the language of whoever asks; the Telegram bot and the logs use `MINESYNC_LANG` (or `LANG`), English by default.
+- **Hub**: API errors and the `/dl` page follow the language of whoever asks; the logs use `MINESYNC_LANG` (or `LANG`), English by default; the Telegram bot uses the language chosen in Settings, or the same default.
 
 ## Licence
 

@@ -53,6 +53,11 @@ func writeFileAtomic(path string, data []byte) error {
 	})
 }
 
+// WriteFileAtomic è writeFileAtomic per gli altri pacchetti dell'hub (es.
+// settings.json): temporaneo + fsync + rename + fsync della directory. Il
+// temporaneo nasce 0600 (os.CreateTemp) e il file finale resta tale.
+func WriteFileAtomic(path string, data []byte) error { return writeFileAtomic(path, data) }
+
 func writeJSON(path string, v any) error {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {

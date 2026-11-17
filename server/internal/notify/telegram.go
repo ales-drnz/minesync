@@ -4,6 +4,11 @@
 // unlock/force = chiuso. In più sorveglia i lock scaduti, perché a un client
 // che sparisce (crash, corrente, chiusura brutale) non arriva mai l'unlock e
 // senza questo controllo il gruppo resterebbe con l'ultimo "ha aperto".
+//
+// Il bot è un servizio che vive quanto l'hub: la configurazione (attivo,
+// token, chat, lingua, quali messaggi) arriva da Apply e vale subito, senza
+// riavvii. Le sessioni aperte si seguono anche a bot spento, così riaccenderlo
+// non perde la durata della sessione nel messaggio di chiusura.
 package notify
 
 import (
@@ -13,15 +18,18 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	neturl "net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"minesync/server/internal/events"
 	"minesync/server/internal/i18n"
+	"minesync/server/internal/settings"
 	"minesync/server/internal/store"
 )
 
@@ -36,22 +44,86 @@ const (
 	pollTimeout   = 10 // secondi di long-poll su getUpdates
 )
 
+// Config è la configurazione corrente del bot.
+type Config struct {
+	Enabled bool
+	Token   string
+	ChatID  string
+	Lang    i18n.Lang // "" = lingua dell'hub
+	Open    bool      // annuncia le aperture
+	Close   bool      // annuncia le chiusure (anche lock scaduti)
+	Alerts  bool      // avvisi del watchdog dei salvataggi
+	Status  bool      // risponde a /status nella chat
+}
+
+// FromSettings converte la sezione telegram di settings.json.
+func FromSettings(tg settings.Telegram) Config {
+	l, _ := i18n.Parse(tg.Lang)
+	return Config{
+		Enabled: tg.Enabled, Token: tg.Token, ChatID: tg.ChatID, Lang: l,
+		Open: tg.Notify.Open, Close: tg.Notify.Close, Alerts: tg.Notify.Alerts, Status: tg.Notify.Status,
+	}
+}
+
+// active: il bot può davvero mandare messaggi.
+func (c Config) active() bool { return c.Enabled && c.Token != "" && c.ChatID != "" }
+
+// tipi di messaggio, ognuno col suo interruttore
+type kind int
+
+const (
+	kindOpen kind = iota
+	kindClose
+	kindAlert
+	kindStatus
+)
+
+func (c Config) wants(k kind) bool {
+	switch k {
+	case kindOpen:
+		return c.Open
+	case kindClose:
+		return c.Close
+	case kindAlert:
+		return c.Alerts
+	case kindStatus:
+		return c.Status
+	}
+	return false
+}
+
+// Status è lo stato del bot per la pagina Impostazioni.
+type Status struct {
+	LastError   error // ultimo errore di Telegram (token già rimosso); nil se l'ultimo invio è riuscito
+	LastErrorAt time.Time
+	LastSentAt  time.Time
+}
+
+// outMsg è un annuncio in coda, con destinatario fissato al momento
+// dell'accodamento.
+type outMsg struct {
+	token, chatID, text string
+}
+
 // Telegram inoltra gli eventi di apertura e chiusura a una chat, risponde a
 // /status e avvisa se una sessione viva smette di salvare sull'hub.
 type Telegram struct {
-	token, chatID string
-	zone          string // zona DNS, per mostrare l'indirizzo fisso ("" = niente)
-	st            *store.Store
-	bus           *events.Bus
-	hc            *http.Client
-	base          string // override per i test
-	out           chan string
-	open          map[string]session
-	lang          i18n.Lang // lingua dei messaggi: quella dell'hub
-}
+	zone   string // zona DNS, per mostrare l'indirizzo fisso ("" = niente)
+	st     *store.Store
+	bus    *events.Bus
+	hc     *http.Client
+	base   string // override per i test
+	out    chan outMsg
+	reconf chan struct{}
+	open   map[string]session // solo dalla goroutine di Run
 
-func (t *Telegram) tr(id string) string            { return i18n.T(t.lang, id) }
-func (t *Telegram) trf(id string, a ...any) string { return i18n.Tf(t.lang, id, a...) }
+	mu        sync.Mutex
+	cfg       Config
+	lastErr   error
+	lastErrAt time.Time
+	pollErr   bool // lastErr viene dal poller (un getUpdates riuscito lo cancella)
+	lastSent  time.Time
+}
 
 type session struct {
 	owner      string
@@ -60,27 +132,107 @@ type session struct {
 	pushWarned bool      // avviso "non salva più" già mandato per questa sessione
 }
 
-// New restituisce il notificatore, o nil se token o chat non sono configurati
-// (il bot è opzionale: senza le due env l'hub gira identico a prima).
-func New(token, chatID, zone string, st *store.Store, bus *events.Bus) *Telegram {
-	if token == "" || chatID == "" {
-		return nil
-	}
+// New crea il bot, spento: la configurazione arriva con Apply.
+func New(zone string, st *store.Store, bus *events.Bus) *Telegram {
 	return &Telegram{
-		token: token, chatID: chatID, zone: zone, st: st, bus: bus,
-		hc:   &http.Client{Timeout: 15 * time.Second},
-		base: apiBase,
-		out:  make(chan string, 64),
-		open: map[string]session{},
-		lang: i18n.Default(),
+		zone: zone, st: st, bus: bus,
+		hc:     &http.Client{Timeout: 15 * time.Second},
+		base:   apiBase,
+		out:    make(chan outMsg, 64),
+		reconf: make(chan struct{}, 1),
+		open:   map[string]session{},
 	}
+}
+
+// Apply cambia la configurazione a caldo: i messaggi successivi seguono la
+// nuova, il poller di /status si ferma o riparte se serve.
+func (t *Telegram) Apply(c Config) {
+	t.mu.Lock()
+	old := t.cfg
+	t.cfg = c
+	if old.Token != c.Token || old.ChatID != c.ChatID || old.active() != c.active() {
+		t.lastErr, t.lastErrAt, t.pollErr = nil, time.Time{}, false
+	}
+	t.mu.Unlock()
+	switch {
+	case c.active() && (!old.active() || old.ChatID != c.ChatID || old.Token != c.Token):
+		log.Print(i18n.Lf("bot Telegram attivo (chat %s)", c.ChatID))
+	case !c.active() && old.active():
+		log.Print(i18n.Lf("bot Telegram disattivato"))
+	}
+	select {
+	case t.reconf <- struct{}{}:
+	default:
+	}
+}
+
+func (t *Telegram) config() Config {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.cfg
+}
+
+// Status restituisce l'esito degli ultimi invii.
+func (t *Telegram) Status() Status {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return Status{LastError: t.lastErr, LastErrorAt: t.lastErrAt, LastSentAt: t.lastSent}
+}
+
+func (t *Telegram) lang() i18n.Lang {
+	if l := t.config().Lang; l != "" {
+		return l
+	}
+	return i18n.Default()
+}
+
+func (t *Telegram) tr(id string) string            { return i18n.T(t.lang(), id) }
+func (t *Telegram) trf(id string, a ...any) string { return i18n.Tf(t.lang(), id, a...) }
+
+// poller in esecuzione: token con cui interroga getUpdates
+type pollerRun struct {
+	token  string
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+func (p *pollerRun) stop() {
+	if p.cancel == nil {
+		return
+	}
+	p.cancel()
+	<-p.done
+	*p = pollerRun{}
 }
 
 // Run consuma gli eventi finché il contesto non viene chiuso.
 func (t *Telegram) Run(ctx context.Context) {
 	t.adopt() // lock già attivi al riavvio dell'hub: niente annuncio, solo stato
 	go t.sender(ctx)
-	go t.poller(ctx) // /status nel gruppo
+
+	// /status nel gruppo: il poller gira solo a bot attivo con /status
+	// abilitato, e riparte da capo se cambia il token
+	var poll pollerRun
+	defer poll.stop()
+	syncPoller := func() {
+		want := ""
+		if c := t.config(); c.active() && c.Status {
+			want = c.Token
+		}
+		if want == poll.token {
+			return
+		}
+		poll.stop()
+		if want != "" {
+			pctx, cancel := context.WithCancel(ctx)
+			poll = pollerRun{token: want, cancel: cancel, done: make(chan struct{})}
+			go func(done chan struct{}) {
+				defer close(done)
+				t.poller(pctx, want)
+			}(poll.done)
+		}
+	}
+	syncPoller()
 
 	ch := t.bus.Subscribe()
 	defer t.bus.Unsubscribe(ch)
@@ -91,6 +243,8 @@ func (t *Telegram) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-t.reconf:
+			syncPoller()
 		case e := <-ch:
 			t.handle(e)
 		case <-tick.C:
@@ -118,7 +272,9 @@ func (t *Telegram) handle(e events.Event) {
 			return
 		}
 		t.open[e.Space] = session{owner: lk.Owner, since: lk.Since, lastPush: time.Now()}
-		t.queue(t.openMsg(e.Space, lk))
+		if t.config().wants(kindOpen) {
+			t.queue(kindOpen, t.openMsg(e.Space, lk))
+		}
 	case "push":
 		if s, was := t.open[e.Space]; was {
 			s.lastPush = time.Now()
@@ -131,7 +287,7 @@ func (t *Telegram) handle(e events.Event) {
 			return
 		}
 		delete(t.open, e.Space)
-		t.queue(t.closeMsg(e.Space, s, ""))
+		t.queue(kindClose, t.closeMsg(e.Space, s, ""))
 	}
 }
 
@@ -148,11 +304,14 @@ func (t *Telegram) sweepPushWatchdog() {
 		if err != nil || lk == nil || lk.Stale(now.UTC()) {
 			continue // chiuso o stale: ci pensa sweepStale
 		}
-		s.pushWarned = true
-		t.open[id] = s
-		t.queue(t.trf(
+		// a avvisi spenti la sessione non si marca: se li si riaccende,
+		// l'avviso arriva
+		if t.queue(kindAlert, t.trf(
 			"⚠️ <b>%s</b> è aperto ma non salva sull'hub da %s\n👤 host <b>%s</b>: i salvataggi automatici non arrivano, lo stato recente non è protetto",
-			esc(t.name(id)), dur(now.Sub(s.lastPush)), esc(s.owner)))
+			esc(t.name(id)), dur(now.Sub(s.lastPush)), esc(s.owner))) {
+			s.pushWarned = true
+			t.open[id] = s
+		}
 	}
 }
 
@@ -167,10 +326,10 @@ func (t *Telegram) sweepStale() {
 		switch {
 		case lk == nil: // rilasciato senza che passassimo dall'evento
 			delete(t.open, id)
-			t.queue(t.closeMsg(id, s, ""))
+			t.queue(kindClose, t.closeMsg(id, s, ""))
 		case lk.Stale(now):
 			delete(t.open, id)
-			t.queue(t.closeMsg(id, s, t.trf("il client di %s non risponde più", esc(s.owner))))
+			t.queue(kindClose, t.closeMsg(id, s, t.trf("il client di %s non risponde più", esc(s.owner))))
 		}
 	}
 }
@@ -189,11 +348,15 @@ type tgUpdate struct {
 
 // poller ascolta i comandi del gruppo con getUpdates (long-poll).
 // Risponde solo a /status e solo nella chat configurata.
-func (t *Telegram) poller(ctx context.Context) {
+func (t *Telegram) poller(ctx context.Context, token string) {
 	var offset int64
 	for ctx.Err() == nil {
-		upds, err := t.getUpdates(ctx, offset)
+		upds, err := t.getUpdates(ctx, token, offset)
 		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			t.recordErr(token, "", t.redact(err, token), true)
 			select {
 			case <-ctx.Done():
 				return
@@ -201,6 +364,7 @@ func (t *Telegram) poller(ctx context.Context) {
 			}
 			continue
 		}
+		t.clearPollErr(token)
 		for _, u := range upds {
 			if u.UpdateID >= offset {
 				offset = u.UpdateID + 1
@@ -213,10 +377,11 @@ func (t *Telegram) poller(ctx context.Context) {
 			if !strings.EqualFold(cmd, "/status") {
 				continue
 			}
-			if fmt.Sprint(u.Message.Chat.ID) != t.chatID {
+			c := t.config()
+			if !sameChat(u.Message.Chat.ID, c.ChatID) {
 				continue
 			}
-			t.queue(t.statusMsg())
+			t.queue(kindStatus, t.statusMsg())
 		}
 		if len(upds) == 0 {
 			// il long-poll vero attende da solo; questa pausa protegge solo
@@ -230,12 +395,18 @@ func (t *Telegram) poller(ctx context.Context) {
 	}
 }
 
-func (t *Telegram) getUpdates(ctx context.Context, offset int64) ([]tgUpdate, error) {
+// sameChat: il chat id configurato può essere numerico o un @canale (in quel
+// caso i comandi non si riconoscono: i canali non mandano /status).
+func sameChat(id int64, configured string) bool {
+	return fmt.Sprint(id) == configured
+}
+
+func (t *Telegram) getUpdates(ctx context.Context, token string, offset int64) ([]tgUpdate, error) {
 	body, _ := json.Marshal(map[string]any{
 		"offset": offset, "timeout": pollTimeout, "allowed_updates": []string{"message"},
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		fmt.Sprintf("%s/bot%s/getUpdates", t.base, t.token), bytes.NewReader(body))
+		fmt.Sprintf("%s/bot%s/getUpdates", t.base, token), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -245,6 +416,10 @@ func (t *Telegram) getUpdates(ctx context.Context, offset int64) ([]tgUpdate, er
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		_, err := apiError(resp)
+		return nil, err
+	}
 	var out struct {
 		OK     bool       `json:"ok"`
 		Result []tgUpdate `json:"result"`
@@ -360,12 +535,19 @@ func dur(d time.Duration) string {
 func esc(s string) string { return html.EscapeString(s) }
 
 // queue accoda senza mai bloccare l'hub: se Telegram è irraggiungibile e la
-// coda si riempie, si perde l'annuncio, non la sessione di gioco.
-func (t *Telegram) queue(msg string) {
+// coda si riempie, si perde l'annuncio, non la sessione di gioco. A bot
+// spento o con quel tipo di messaggio disattivato non accoda nulla (false).
+func (t *Telegram) queue(k kind, msg string) bool {
+	c := t.config()
+	if !c.active() || !c.wants(k) {
+		return false
+	}
 	select {
-	case t.out <- msg:
+	case t.out <- outMsg{token: c.Token, chatID: c.ChatID, text: msg}:
+		return true
 	default:
 		log.Print(i18n.Lf("telegram: coda piena, annuncio scartato"))
+		return false
 	}
 }
 
@@ -374,29 +556,28 @@ func (t *Telegram) sender(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case msg := <-t.out:
-			t.send(ctx, msg)
+		case m := <-t.out:
+			// accodato prima di un cambio di configurazione: il bot è stato
+			// spento o punta altrove, l'annuncio non va più mandato
+			if c := t.config(); !c.active() || c.Token != m.token || c.ChatID != m.chatID {
+				continue
+			}
+			t.send(ctx, m)
 		}
 	}
 }
 
-func (t *Telegram) send(ctx context.Context, msg string) {
-	body, err := json.Marshal(map[string]any{
-		"chat_id": t.chatID, "text": msg, "parse_mode": "HTML",
-		"disable_web_page_preview": true,
-	})
-	if err != nil {
-		return
-	}
-	url := fmt.Sprintf("%s/bot%s/sendMessage", t.base, t.token)
+func (t *Telegram) send(ctx context.Context, m outMsg) {
+	var err error
 	for try := 1; ; try++ {
-		err := t.post(ctx, url, body)
+		var retry bool
+		retry, err = t.sendOnce(ctx, m.token, m.chatID, m.text)
 		if err == nil {
+			t.recordSent(m.token, m.chatID)
 			return
 		}
-		if try == sendTries || ctx.Err() != nil {
-			log.Print(i18n.Lf("telegram: annuncio non inviato: %v", t.redact(err)))
-			return
+		if !retry || try == sendTries || ctx.Err() != nil {
+			break
 		}
 		select {
 		case <-ctx.Done():
@@ -404,11 +585,106 @@ func (t *Telegram) send(ctx context.Context, msg string) {
 		case <-time.After(time.Duration(try) * 2 * time.Second):
 		}
 	}
+	err = t.redact(err, m.token)
+	t.recordErr(m.token, m.chatID, err, false)
+	log.Print(i18n.Lf("telegram: annuncio non inviato: %v", err))
+}
+
+// Test manda subito un messaggio di prova con la configurazione c (anche non
+// salvata), un tentativo solo. L'errore è già senza token.
+func (t *Telegram) Test(ctx context.Context, c Config) error {
+	l := c.Lang
+	if l == "" {
+		l = i18n.Default()
+	}
+	msg := i18n.T(l, "✅ <b>MineSync</b>: messaggio di prova. Il bot è configurato correttamente.")
+	_, err := t.sendOnce(ctx, c.Token, c.ChatID, msg)
+	if err != nil {
+		err = t.redact(err, c.Token)
+		t.recordErr(c.Token, c.ChatID, err, false)
+		return err
+	}
+	t.recordSent(c.Token, c.ChatID)
+	return nil
+}
+
+// sendOnce chiama sendMessage; retry dice se ha senso riprovare (rete, 5xx,
+// 429), non per gli errori di configurazione (401 token, 400 chat).
+func (t *Telegram) sendOnce(ctx context.Context, token, chatID, msg string) (retry bool, err error) {
+	body, err := json.Marshal(map[string]any{
+		"chat_id": chatID, "text": msg, "parse_mode": "HTML",
+		"disable_web_page_preview": true,
+	})
+	if err != nil {
+		return false, err
+	}
+	url := fmt.Sprintf("%s/bot%s/sendMessage", t.base, token)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := t.hc.Do(req)
+	if err != nil {
+		return true, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return apiError(resp)
+	}
+	return false, nil
+}
+
+// apiError: lo status di Telegram con la sua descrizione ("401 Unauthorized
+// (Unauthorized)", "400 Bad Request (Bad Request: chat not found)").
+func apiError(resp *http.Response) (retry bool, err error) {
+	var out struct {
+		Description string `json:"description"`
+	}
+	_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&out)
+	st := resp.Status
+	if d := strings.TrimSpace(out.Description); d != "" {
+		st += " (" + d + ")"
+	}
+	retry = resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests
+	return retry, i18n.Errorf("telegram ha risposto %s", st)
+}
+
+// recordSent e recordErr aggiornano lo stato solo se riguardano la
+// configurazione corrente (un test con dati non salvati non lo sporca).
+func (t *Telegram) recordSent(token, chatID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if token != t.cfg.Token || chatID != t.cfg.ChatID {
+		return
+	}
+	t.lastSent = time.Now().UTC()
+	t.lastErr, t.lastErrAt, t.pollErr = nil, time.Time{}, false
+}
+
+// recordErr: chatID "" = errore del poller (vale per qualsiasi chat).
+func (t *Telegram) recordErr(token, chatID string, err error, fromPoll bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if token != t.cfg.Token || (chatID != "" && chatID != t.cfg.ChatID) {
+		return
+	}
+	t.lastErr, t.lastErrAt, t.pollErr = err, time.Now().UTC(), fromPoll
+}
+
+// clearPollErr: getUpdates è tornato a funzionare. Un errore di invio resta
+// (il poller non dice nulla sulla chat).
+func (t *Telegram) clearPollErr(token string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.pollErr && token == t.cfg.Token {
+		t.lastErr, t.lastErrAt, t.pollErr = nil, time.Time{}, false
+	}
 }
 
 // redact toglie il token del bot da un errore: un *url.Error contiene l'URL
-// completo (…/bot<TOKEN>/…) e finirebbe nei log.
-func (t *Telegram) redact(err error) error {
+// completo (…/bot<TOKEN>/…) e finirebbe nei log e nella web UI.
+func (t *Telegram) redact(err error, token string) error {
 	if err == nil {
 		return nil
 	}
@@ -416,25 +692,8 @@ func (t *Telegram) redact(err error) error {
 	if errors.As(err, &ue) {
 		err = fmt.Errorf("%s: %w", ue.Op, ue.Err)
 	}
-	if t.token != "" && strings.Contains(err.Error(), t.token) {
-		return errors.New(strings.ReplaceAll(err.Error(), t.token, "<token>"))
+	if token != "" && strings.Contains(err.Error(), token) {
+		return errors.New(strings.ReplaceAll(err.Error(), token, "<token>"))
 	}
 	return err
-}
-
-func (t *Telegram) post(ctx context.Context, url string, body []byte) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := t.hc.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return i18n.Errorf("telegram ha risposto %s", resp.Status)
-	}
-	return nil
 }

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"minesync/server/internal/events"
+	"minesync/server/internal/settings"
 	"minesync/server/internal/store"
 )
 
@@ -47,7 +48,12 @@ func newHub(t *testing.T) *testHub {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg, err := settings.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	srv := &Server{
+		Settings: cfg, Telegram: &fakeBot{},
 		Store: st, Bus: events.NewBus(filepath.Join(dir, "events.jsonl")),
 		ZT: fakeZT{
 			ipAdmin:  {Name: "alex", Admin: true},
