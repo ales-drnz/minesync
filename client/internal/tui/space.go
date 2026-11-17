@@ -17,6 +17,7 @@ import (
 	"minesync/client/internal/api"
 	"minesync/client/internal/config"
 	"minesync/client/internal/i18n"
+	"minesync/client/internal/lockbeat"
 	"minesync/client/internal/mc"
 	"minesync/client/internal/syncx"
 )
@@ -410,8 +411,21 @@ func manualPush(ctx context.Context, client *api.Client, eng *syncx.Engine, id, 
 		client.LockRelease(rctx, id, lk.Session, false)
 	}()
 	eng.LockSession = lk.Session
-	return eng.Push(ctx, msg, false)
+	// 3.2.0: heartbeat per tutto il push, che può durare più del TTL del
+	// lock; se l'hub dice che il lock non è più nostro il push si annulla
+	pctx, stop := lockbeat.Keep(ctx, client, id, lk.Session, pushBeatEvery)
+	res, err := eng.Push(pctx, msg, false)
+	stop()
+	if err != nil {
+		if lerr := lockbeat.Err(pctx); lerr != nil {
+			return res, lerr
+		}
+	}
+	return res, err
 }
+
+// pushBeatEvery: ritmo degli heartbeat del push manuale (variabile per i test).
+var pushBeatEvery = lockbeat.DefaultEvery
 
 func (s *spaceScreen) acquireAndPlay(discardLocal bool) tea.Cmd {
 	client := s.app.client

@@ -16,6 +16,7 @@ import (
 	"minesync/client/internal/config"
 	"minesync/client/internal/i18n"
 	"minesync/client/internal/launch"
+	"minesync/client/internal/lockbeat"
 	"minesync/client/internal/syncx"
 	"minesync/client/internal/tui"
 )
@@ -437,10 +438,11 @@ func cmdPush(ctx context.Context, args []string) error {
 		return err
 	}
 	eng.AllowStaleBase, eng.AllowMassDelete = *force, *force
+	pushCtx := ctx
 	if !*nolock {
 		// il push è legato alla sessione del lock: lo si prende per la
 		// durata del push e lo si rilascia subito dopo
-		lk, err := eng.Client.LockAcquire(ctx, space, map[string]string{"via": "cli push"})
+		lk, err := eng.Client.LockAcquire(ctx, space, map[string]string{"action": "push", "via": "cli"})
 		if err != nil {
 			var ae *api.APIError
 			if errors.As(err, &ae) && ae.Holder != nil {
@@ -456,11 +458,19 @@ func cmdPush(ctx context.Context, args []string) error {
 				fmt.Fprintln(os.Stderr, i18n.S("attenzione: rilascio del lock non riuscito:"), err)
 			}
 		}()
+		// heartbeat per tutto il push (3.2.0): un upload lungo non perde più
+		// il lock a metà; se lo perde davvero, il push si annulla
+		var stop func()
+		pushCtx, stop = lockbeat.Keep(ctx, eng.Client, space, lk.Session, lockbeat.DefaultEvery)
+		defer stop()
 	}
 	start := time.Now()
-	res, err := eng.Push(ctx, *msg, *nolock)
+	res, err := eng.Push(pushCtx, *msg, *nolock)
 	fmt.Println()
 	if err != nil {
+		if lerr := lockbeat.Err(pushCtx); lerr != nil {
+			return lerr
+		}
 		return err
 	}
 	if res.NoChange {
