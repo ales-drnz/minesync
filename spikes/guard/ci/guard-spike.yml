@@ -1,0 +1,30 @@
+# Job CI proposto (copiare in .github/workflows/ se lo si vuole attivare).
+name: spike-guard
+on:
+  workflow_dispatch:
+  push:
+    paths: ['spikes/guard/**']
+jobs:
+  guard:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - name: run (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: spikes/guard/run.sh
+      - name: run (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: spikes/guard/run.ps1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: guard-results-${{ matrix.os }}
+          path: spikes/guard/.tmp/work/

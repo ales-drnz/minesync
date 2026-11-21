@@ -1,0 +1,9 @@
+name: guard_spike
+description: Spike - supervisione del server Minecraft senza processi orfani (guard AOT).
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.9.0
+dependencies:
+  ffi: ^2.2.0
