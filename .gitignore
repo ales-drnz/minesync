@@ -15,3 +15,9 @@ REVISIONE.md
 .vscode/
 .idea/
 *.log
+
+# Dart / Flutter (0.1.0)
+.dart_tool/
+build/
+.flutter-plugins-dependencies
+spikes/**/.tmp/

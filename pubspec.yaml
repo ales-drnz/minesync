@@ -1,0 +1,22 @@
+# Workspace Dart di MineSync 0.1.0: un solo lockfile per tutti i pacchetti.
+name: minesync_workspace
+publish_to: none
+
+environment:
+  sdk: ^3.10.0
+
+workspace:
+  - packages/ms_protocol
+  - packages/ms_core
+  - packages/ms_minecraft
+  - packages/ms_session
+  - packages/ms_l10n
+  - packages/ms_ui
+  - apps/hub
+  - apps/hub_web
+  - apps/desktop
+  - apps/cli
+  - apps/guard
+
+dev_dependencies:
+  lints: ^6.0.0
