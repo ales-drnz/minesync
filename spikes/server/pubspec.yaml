@@ -1,0 +1,11 @@
+name: spike_server
+description: Spike Fase 0 - hub MineSync come server Dart AOT (prototipo usa-e-getta).
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  crypto: ^3.0.8   # BSD-3-Clause (dart.dev)
+  ffi: ^2.2.0      # BSD-3-Clause (dart.dev) - solo per Utf8/malloc nella FFI a open/fsync

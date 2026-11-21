@@ -1,0 +1,22 @@
+# Spike dell'hub Dart: stesso run.sh su x64 e su un runner arm64 nativo
+# (il NAS può essere arm64), immagine Docker inclusa.
+name: spike-server
+on:
+  workflow_dispatch:
+  push:
+    paths: ['spikes/server/**']
+jobs:
+  run:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.4
+      - run: sudo apt-get update && sudo apt-get install -y dnsutils
+      - run: spikes/server/run.sh
