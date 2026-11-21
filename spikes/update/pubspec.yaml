@@ -1,0 +1,14 @@
+name: spike_update
+description: Spike - auto-aggiornamento firmato dell'app desktop (launcher + versions/).
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.9.0
+
+# Licenze: cryptography Apache-2.0; crypto, ffi, path BSD-3-Clause (Dart team).
+dependencies:
+  cryptography: ^2.9.0
+  crypto: ^3.0.8
+  ffi: ^2.2.0
+  path: ^1.9.1

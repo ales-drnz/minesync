@@ -1,0 +1,29 @@
+# Job CI proposto (da copiare in .github/workflows/ quando si vuole): esegue
+# la stessa suite e2e su Linux, Windows e macOS.
+name: spike-update
+on: workflow_dispatch
+jobs:
+  e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: spikes/update
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.4
+      - if: runner.os != 'Windows'
+        run: ./run.sh
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./run.ps1
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs-${{ matrix.os }}
+          path: spikes/update/.tmp/e2e/logs
