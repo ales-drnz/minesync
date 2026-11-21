@@ -1,0 +1,38 @@
+# Job CI dello spike SHA-256 (da copiare in .github/workflows/ se lo si vuole
+# attivare). Verifica su ogni piattaforma: backend nativo caricato (CNG su
+# Windows, CommonCrypto su macOS, OpenSSL su Linux), vettori noti, accordo
+# fra backend, identità con il tool di sistema su 2009 file, throughput
+# single-thread >= 1000 MB/s e pool >= 2x sui file piccoli.
+name: spike-hash
+on:
+  workflow_dispatch:
+  push:
+    paths: ['spikes/hash/**']
+jobs:
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.4
+      - name: Linux/macOS
+        if: runner.os != 'Windows'
+        env:
+          HASH_SPIKE_QUICK: '1'
+          HASH_SPIKE_DOCKER: ${{ runner.os == 'Linux' && '1' || '0' }}
+        run: spikes/hash/run.sh
+      - name: Windows
+        if: runner.os == 'Windows'
+        env:
+          HASH_SPIKE_QUICK: '1'
+        run: pwsh -File spikes/hash/run.ps1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hash-results-${{ matrix.os }}
+          path: spikes/hash/.tmp/results-all.json

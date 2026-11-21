@@ -1,0 +1,12 @@
+name: hash_spike
+description: Spike MineSync 0.1.0 - SHA-256 veloce (FFI alla crypto di sistema + fallback puro Dart + pool di isolate).
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  crypto: ^3.0.8
+  ffi: ^2.2.0
+  hashlib: ^2.4.4
