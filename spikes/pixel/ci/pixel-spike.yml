@@ -1,0 +1,48 @@
+# PROPOSTA di workflow GitHub Actions (da copiare in .github/workflows/ dal
+# coordinatore): esegue lo spike pixel su Windows, macOS e Chrome (web).
+name: spike-pixel
+on: workflow_dispatch
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: spikes/pixel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.5
+          channel: stable
+      - name: Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./run.ps1
+      - name: macOS
+        if: runner.os == 'macOS'
+        run: SKIP_WEB=1 ./run.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pixel-${{ matrix.os }}
+          path: spikes/pixel/.tmp/engine
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: spikes/pixel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.5
+          channel: stable
+      - uses: nanasess/setup-chromedriver@v2
+      - run: chromedriver --port=4444 &
+      # purezza della geometria con CanvasKit (JS) e skwasm (wasm) in Chrome
+      - run: flutter drive -d web-server --browser-name=chrome --release --driver=test_driver/integration_test.dart --target=integration_test/capture_test.dart
+      - run: flutter drive -d web-server --browser-name=chrome --release --wasm --driver=test_driver/integration_test.dart --target=integration_test/capture_test.dart

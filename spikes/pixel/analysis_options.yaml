@@ -1,0 +1,12 @@
+analyzer:
+  exclude:
+    - build/**
+    - web/**
+    - linux/**
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    # spike: nomi brevi dei parametri nei render object
+    avoid_renaming_method_parameters: false
+    prefer_initializing_formals: false

@@ -1,0 +1,10 @@
+name: spike_web_server
+description: "Spike: server statico + SSE per la web UI Flutter dell'hub (usa e getta)."
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  crypto: ^3.0.6
