@@ -1,0 +1,126 @@
+# MineSync hub: example Compose file for a NAS or a small home server.
+#
+# The hub shares the network namespace of the ZeroTier container, so it is
+# reachable only from inside your ZeroTier network (no port is published on
+# the LAN). Identity = ZeroTier member, resolved through ZTNET: no passwords.
+#
+# Copy this file next to a `.env` (or edit it), replace every <...>, then:
+#   docker compose up -d
+#   docker compose exec zerotier zerotier-cli join <network-id>
+# and authorise the new member in ZTNET. See deploy/README.md.
+
+services:
+  zerotier:
+    # Pin the version you tested; any ZeroTier One 1.14+ image works.
+    image: zyclonite/zerotier:1.14.2
+    container_name: zerotier
+    restart: unless-stopped
+    cap_add: [NET_ADMIN, SYS_ADMIN]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - zerotier:/var/lib/zerotier-one
+    ports:
+      - "9993:9993/udp" # ZeroTier peer traffic (not MineSync)
+    # MineSync's own ports (8084/tcp, 53/udp+tcp) live in this namespace and
+    # are reachable on the ZeroTier address only: do not publish them.
+
+  minesync:
+    image: ghcr.io/ales-drnz/minesync-hub:latest # or :0.1 to stay on 0.1.x, :0.1.0 for exactly that release
+    # ...or build it from a checkout of the repository:
+    # build:
+    #   context: /path/to/minesync
+    #   dockerfile: deploy/Dockerfile
+    container_name: minesync
+    restart: unless-stopped
+    network_mode: service:zerotier
+    depends_on: [zerotier]
+    stop_grace_period: 30s # lets the hub finish writes on shutdown
+    # The image runs as 65532:65532 without a shell and only writes /data.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # To use a bind mount owned by your own user, set it here and chown the
+    # folder to it:
+    # user: "1000:100"
+    volumes:
+      - minesync_hub_data:/data # local disk only: never SMB/NFS
+      # - /volume1/docker/minesync:/data
+    environment:
+      TZ: Europe/Rome # time zone of the logs and of the Telegram bot
+
+      # HTTP listen address (API, web UI, /dl). Default :8084 on every
+      # address of the namespace; you may bind the ZeroTier address only:
+      # MINESYNC_ADDR: 192.0.2.10:8084
+
+      # -- Identity = the ZeroTier network (ZTNET API) --------------------
+      # A request from an authorised member's ZeroTier IP is that member,
+      # with its ZTNET name. Create the token in ZTNET -> Account -> API.
+      ZTNET_URL: http://ztnet:3000
+      ZTNET_API_TOKEN: <ztnet-api-token>
+      ZTNET_NETWORK_ID: <network-id>
+      # Admins: ZTNET member names or 10-hex node ids, comma-separated.
+      # Node ids are safer (two members may share a name).
+      MINESYNC_ADMINS: <node-id>
+
+      # Extra host names you use to open the web UI (IP addresses, localhost
+      # and names in the DNS zone always work):
+      # MINESYNC_HOSTS: minesync.lan
+
+      # -- Fixed server address via DNS (optional) ------------------------
+      # zerotier.<space>.<zone> -> ZeroTier IP of whoever hosts the server
+      # now. It is only a lookup: game traffic stays peer-to-peer.
+      # "internal" is reserved for private use (do not use ".local": mDNS).
+      # MINESYNC_DNS_ZONE: internal
+      # MINESYNC_DNS_ADDR: :53 # default with a zone; `off` disables it
+      # MINESYNC_DNS_ADDR: 192.0.2.10:53 # ZeroTier address only
+
+      # -- Limits (optional) ----------------------------------------------
+      # MINESYNC_MIN_FREE: 5GiB # refuse uploads below this free space
+      # MINESYNC_MAX_UPLOADS: 4 # uploads read in parallel
+
+      # The image already sets MINESYNC_DATA=/data, MINESYNC_WEB=/app/web,
+      # MINESYNC_DL=/app/dl and the Dart heap cap (DART_VM_OPTIONS).
+      # Never set MINESYNC_DEV_USER here: it is for development only.
+
+  # -- ZTNET (optional) ----------------------------------------------------
+  # Skip this block if you already run ZTNET (set ZTNET_URL to it instead).
+  # Started with `docker compose --profile ztnet up -d`, it uses the
+  # zerotier container above as its network controller; follow the ZTNET
+  # documentation (ztnet.network) for the current image and settings.
+  postgres:
+    profiles: [ztnet]
+    image: postgres:16-alpine
+    container_name: ztnet-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ztnet
+      POSTGRES_PASSWORD: <postgres-password>
+      POSTGRES_DB: ztnet
+    volumes:
+      - postgres:/var/lib/postgresql/data
+
+  ztnet:
+    profiles: [ztnet]
+    image: sinamics/ztnet:latest # pin the version you tested
+    container_name: ztnet
+    restart: unless-stopped
+    depends_on: [postgres, zerotier]
+    volumes:
+      - zerotier:/var/lib/zerotier-one # reads the controller's auth token
+    ports:
+      - "3000:3000" # ZTNET web UI on the LAN
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ztnet
+      POSTGRES_PASSWORD: <postgres-password>
+      POSTGRES_DB: ztnet
+      NEXTAUTH_URL: http://<nas-lan-address>:3000
+      NEXTAUTH_URL_INTERNAL: http://ztnet:3000
+      NEXTAUTH_SECRET: <random-secret>
+
+volumes:
+  zerotier:
+  minesync_hub_data:
+  postgres:

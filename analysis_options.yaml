@@ -1,0 +1,24 @@
+# Analisi statica comune a tutto il workspace: lints raccomandati più
+# controlli di tipo stretti e qualche regola di stile.
+include: package:lints/recommended.yaml
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  exclude:
+    - "**/build/**"
+    - "**/.dart_tool/**"
+
+linter:
+  rules:
+    - prefer_const_constructors
+    - prefer_const_declarations
+    - prefer_final_locals
+    - unawaited_futures
+    - always_declare_return_types
+    - avoid_print
+
+formatter:
+  page_width: 100

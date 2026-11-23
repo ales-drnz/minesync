@@ -1,0 +1,5 @@
+tags:
+  # scenari con processi veri (launcher e app finta compilati): lenti, ma
+  # girano comunque con un semplice `dart test`
+  scenario:
+    timeout: 5m

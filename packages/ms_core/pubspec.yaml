@@ -1,0 +1,16 @@
+name: ms_core
+description: "MineSync sync engine: scan, hashing, chunks, manifests, outbox, pull and push."
+publish_to: none
+version: 0.1.0
+resolution: workspace
+
+environment:
+  sdk: ^3.10.0
+
+dev_dependencies:
+  test: ^1.26.0
+dependencies:
+  crypto: ^3.0.8
+  ffi: ^2.2.0
+  ms_protocol: ^0.1.0
+  unorm_dart: ^0.3.3

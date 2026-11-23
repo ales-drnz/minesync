@@ -1,0 +1,20 @@
+name: ms_modpack
+description: "MineSync modpacks: pack file, Modrinth API v2, .mrpack, resolver and server installers."
+publish_to: none
+version: 0.1.0
+resolution: workspace
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  # archive: MIT, già nel workspace (lettura e scrittura dei .mrpack, puro Dart)
+  archive: ^4.7.1
+  crypto: ^3.0.8
+  # solo per lib/io.dart (EULA, Java richiesto): la libreria dei modelli non lo importa
+  ms_minecraft: ^0.1.0
+  ms_protocol: ^0.1.0
+  path: ^1.9.0
+
+dev_dependencies:
+  test: ^1.26.0

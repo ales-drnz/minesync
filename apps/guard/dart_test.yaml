@@ -1,0 +1,5 @@
+tags:
+  # scenari con processi veri (guard, script, finto server, nipoti): lenti,
+  # ma girano comunque con un semplice `dart test`
+  scenario:
+    timeout: 2m

@@ -1,0 +1,19 @@
+name: minesync_launcher
+description: "Launcher and signed self-update of the MineSync desktop app."
+publish_to: none
+version: 0.1.0
+resolution: workspace
+
+environment:
+  sdk: ^3.10.0
+
+# Licenze: cryptography Apache-2.0 (Ed25519 in Dart puro); crypto, ffi, path
+# BSD-3-Clause (team Dart).
+dependencies:
+  cryptography: ^2.9.0
+  crypto: ^3.0.6
+  ffi: ^2.2.0
+  path: ^1.9.1
+
+dev_dependencies:
+  test: ^1.26.0

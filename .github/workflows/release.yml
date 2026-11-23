@@ -1,0 +1,312 @@
+# Release di MineSync: pacchetti desktop per ogni sistema, firma degli
+# aggiornamenti, binari dell'hub, immagine Docker e release GitHub in bozza.
+#
+# - push di un tag v*: release vera. Il tag deve essere v$(cat VERSION); la
+#   firma usa il segreto MINESYNC_UPDATE_KEY e la chiave pubblica
+#   vars.MINESYNC_UPDATE_PUBKEY; l'immagine va su ghcr.io e la release
+#   GitHub nasce in bozza (la pubblica a mano chi ha fatto il tag).
+# - workflow_dispatch, o un push su main che tocca release, pacchetti o
+#   deploy: prova a secco. Stessi passi con una chiave usa e getta generata
+#   qui; niente immagine pubblicata, niente release: solo artefatti della CI.
+#   Solo un tag è una release vera (GITHUB_REF_TYPE = tag).
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+    branches: [main]
+    paths:
+      - '.github/workflows/release.yml'
+      - '.github/workflows/hub-image.yml'
+      - 'tools/package/**'
+      - 'deploy/**'
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: "3.47.5"
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
+      pubkey: ${{ steps.key.outputs.pubkey }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Versione e tag
+        id: v
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            tools/check_version.sh --tag "$GITHUB_REF_NAME"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            tools/check_version.sh
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+      - uses: subosito/flutter-action@v2
+        if: steps.v.outputs.release != 'true'
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Chiave di firma
+        id: key
+        env:
+          RELEASE: ${{ steps.v.outputs.release }}
+          PUBKEY: ${{ vars.MINESYNC_UPDATE_PUBKEY }}
+          HAS_KEY: ${{ secrets.MINESYNC_UPDATE_KEY != '' }}
+        run: |
+          if [ "$RELEASE" = true ]; then
+            [ -n "$PUBKEY" ] || { echo "::error::manca vars.MINESYNC_UPDATE_PUBKEY"; exit 1; }
+            [ "$HAS_KEY" = true ] || { echo "::error::manca il segreto MINESYNC_UPDATE_KEY"; exit 1; }
+            echo "pubkey=$PUBKEY" >> "$GITHUB_OUTPUT"
+          else
+            # prova a secco: chiave usa e getta, la privata solo nell'artefatto
+            # (un giorno) che legge il job di firma
+            flutter pub get --enforce-lockfile
+            pub=$(dart run apps/launcher/bin/minesync_release.dart keygen --out "$RUNNER_TEMP/dryrun-key" | tail -1)
+            echo "pubkey=$pub" >> "$GITHUB_OUTPUT"
+            echo "chiave pubblica usa e getta: $pub"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: steps.v.outputs.release != 'true'
+        with:
+          name: dryrun-signing-key
+          path: ${{ runner.temp }}/dryrun-key/signing.key
+          retention-days: 1
+          if-no-files-found: error
+
+  # Pacchetti desktop: tools/package/desktop.sh <piattaforma> <cartella>
+  # scrive il download per gli utenti e update/<piattaforma>/ (non firmato).
+  # Le chiavi di firma vere (segreto e variabile del repo) sono una coppia?
+  # Gira anche nella prova a secco, così un errore si vede prima del tag.
+  keys:
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Coppia di chiavi
+        env:
+          RELEASE: ${{ needs.version.outputs.release }}
+          KEY: ${{ secrets.MINESYNC_UPDATE_KEY }}
+          PUB: ${{ vars.MINESYNC_UPDATE_PUBKEY }}
+        run: |
+          if [ -z "$KEY" ] || [ -z "$PUB" ]; then
+            if [ "$RELEASE" = true ]; then
+              echo "::error::MINESYNC_UPDATE_KEY o MINESYNC_UPDATE_PUBKEY non impostati"
+              exit 1
+            fi
+            echo "::warning::chiavi di firma non impostate: niente aggiornamenti automatici"
+            exit 0
+          fi
+          tools/check_keys.sh
+
+  desktop:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux-x64, os: ubuntu-24.04 }
+          - { platform: linux-arm64, os: ubuntu-24.04-arm }
+          - { platform: windows-x64, os: windows-latest }
+          - { platform: macos-arm64, os: macos-latest }
+          - { platform: macos-x64, os: macos-15-intel }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - name: Librerie di sistema (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev \
+            libayatana-appindicator3-dev libnotify-dev
+      - uses: subosito/flutter-action@v2
+        if: runner.arch != 'ARM64' || runner.os != 'Linux'
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      # flutter-action non ha l'SDK per Linux arm64: si prende dal tag git
+      - name: Flutter (Linux arm64)
+        if: runner.arch == 'ARM64' && runner.os == 'Linux'
+        run: |
+          git clone --depth 1 -b "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$HOME/flutter"
+          echo "$HOME/flutter/bin" >> "$GITHUB_PATH"
+      - run: flutter pub get --enforce-lockfile
+      - name: Pacchetto ${{ matrix.platform }}
+        env:
+          MINESYNC_UPDATE_PUBKEY: ${{ needs.version.outputs.pubkey }}
+        run: tools/package/desktop.sh "${{ matrix.platform }}" dist/
+      - name: Contenuto
+        run: find dist -type f | sort
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.platform }}
+          path: dist/
+          if-no-files-found: error
+
+  # Binari dell'hub per chi non usa Docker (cross-compilati da Linux x64)
+  hub-cli:
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - name: Hub linux x64 e arm64
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          mkdir -p dist
+          for a in x64 arm64; do
+            dart compile exe --target-os linux --target-arch "$a" apps/hub/bin/hub.dart \
+              -o "dist/minesync-hub-$VERSION-linux-$a"
+          done
+          file dist/*
+          # il binario x64 parte: senza hub in ascolto healthcheck esce con 1
+          rc=0; "dist/minesync-hub-$VERSION-linux-x64" healthcheck || rc=$?
+          [ "$rc" = 1 ] || { echo "::error::healthcheck: uscita $rc, attesa 1"; exit 1; }
+      - name: Web UI dell'hub (per chi non usa Docker, MINESYNC_WEB)
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          (cd apps/hub_web && flutter build web --wasm --release --no-web-resources-cdn \
+            --no-source-maps --base-href /)
+          find apps/hub_web/build/web \( -name '*.symbols' -o -name '*.map' \) -delete
+          tar -C apps/hub_web/build/web -czf "dist/minesync-hub-$VERSION-web.tar.gz" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hub-cli
+          path: dist/
+          if-no-files-found: error
+
+  # Firma: manifest degli aggiornamenti e SHA256SUMS(.sig) su tutti i file
+  sign:
+    needs: [version, keys, desktop, hub-cli]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: desktop-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v5
+        with:
+          name: hub-cli
+          path: dist
+      - uses: actions/download-artifact@v5
+        if: needs.version.outputs.release != 'true'
+        with:
+          name: dryrun-signing-key
+          path: ${{ runner.temp }}/dryrun-key
+      - name: Firma
+        env:
+          RELEASE: ${{ needs.version.outputs.release }}
+          MINESYNC_UPDATE_KEY: ${{ needs.version.outputs.release == 'true' && secrets.MINESYNC_UPDATE_KEY || '' }}
+        run: |
+          if [ "$RELEASE" != true ]; then
+            MINESYNC_UPDATE_KEY=$(cat "$RUNNER_TEMP/dryrun-key/signing.key")
+            echo "::add-mask::$MINESYNC_UPDATE_KEY"
+            export MINESYNC_UPDATE_KEY
+          fi
+          tools/package/sign.sh dist/
+          rm -rf "$RUNNER_TEMP/dryrun-key"
+      - name: Verifica con la chiave pubblica
+        env:
+          PUBKEY: ${{ needs.version.outputs.pubkey }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          tools/verify_release.sh dist "$PUBKEY" linux-x64 linux-arm64 windows-x64 macos-arm64 macos-x64
+          for f in \
+            "MineSync-$VERSION-linux-x64.AppImage" \
+            "MineSync-$VERSION-linux-arm64.AppImage" \
+            "MineSync-$VERSION-windows-x64-setup.exe" \
+            "MineSync-$VERSION-macos-arm64.dmg" \
+            "MineSync-$VERSION-macos-x64.dmg" \
+            "minesync-hub-$VERSION-linux-x64" \
+            "minesync-hub-$VERSION-linux-arm64"; do
+            [ -f "dist/$f" ] || { echo "::error::manca $f"; exit 1; }
+            grep -q " \*\?$f\$" dist/SHA256SUMS || { echo "::error::$f non è in SHA256SUMS"; exit 1; }
+          done
+          find dist -type f | sort
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: dist/
+          if-no-files-found: error
+
+  # Immagine dell'hub con /dl = download firmati + update/; pubblicata su
+  # ghcr.io solo dal tag (il job publish di hub-image.yml)
+  image:
+    needs: [version, sign]
+    uses: ./.github/workflows/hub-image.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      push: ${{ needs.version.outputs.release == 'true' }}
+      dl-artifact: release
+
+  # Release GitHub in bozza, solo dal tag
+  github-release:
+    needs: [version, sign, image]
+    if: needs.version.outputs.release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: release
+          path: dist
+      - name: Bozza della release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          # contenuto di /dl per un hub senza Docker (MINESYNC_DL)
+          tar -C dist --exclude 'minesync-hub-*' -czf "minesync-hub-$VERSION-dl.tar.gz" .
+          pre=""
+          case "$VERSION" in *-*) pre=--prerelease ;; esac
+          cat > notes.md <<EOF
+          MineSync $VERSION (draft).
+
+          - Desktop: Windows setup, macOS dmg, Linux AppImage. The apps are not code-signed:
+            expect SmartScreen / Gatekeeper warnings on first start.
+          - Hub: \`ghcr.io/${OWNER,,}/minesync-hub:$VERSION\` (linux/amd64, linux/arm64), or
+            \`minesync-hub-$VERSION-linux-*\` with \`minesync-hub-$VERSION-dl.tar.gz\` as \`MINESYNC_DL\`.
+          - \`SHA256SUMS\` is signed with the update key (\`SHA256SUMS.sig\`, ed25519).
+          EOF
+          mapfile -t files < <(find dist -maxdepth 1 -type f | sort)
+          gh release create "$TAG" --repo "$REPO" --draft --verify-tag $pre \
+            --title "MineSync $VERSION" --notes-file notes.md \
+            "${files[@]}" "minesync-hub-$VERSION-dl.tar.gz"

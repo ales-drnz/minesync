@@ -1,0 +1,16 @@
+name: ms_session
+description: "MineSync game session: states, autosave, crash handling, console."
+publish_to: none
+version: 0.1.0
+resolution: workspace
+
+environment:
+  sdk: ^3.10.0
+
+dev_dependencies:
+  test: ^1.26.0
+dependencies:
+  minesync_guard: ^0.1.0
+  ms_core: ^0.1.0
+  ms_minecraft: ^0.1.0
+  ms_protocol: ^0.1.0

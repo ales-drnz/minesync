@@ -1,0 +1,191 @@
+# CI di MineSync: controlli su Linux, test su Windows, macOS e Linux arm64,
+# build dei tre sistemi e pacchetti. Gira su main e sulle pull request.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: "3.47.5"
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: tools/check.sh
+
+  # I pacchetti con codice nativo (hash, disco, permessi, file system) vanno
+  # provati anche su Windows e macOS, non solo su Linux. apps/launcher ha gli
+  # scenari dell'aggiornamento (kill, crash, rollback) con processi veri.
+  test-os:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        if: runner.arch != 'ARM64' || runner.os != 'Linux'
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      # flutter-action non ha l'SDK per Linux arm64: si prende dal tag git
+      - name: Flutter (Linux arm64)
+        if: runner.arch == 'ARM64' && runner.os == 'Linux'
+        run: |
+          git clone --depth 1 -b "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$HOME/flutter"
+          echo "$HOME/flutter/bin" >> "$GITHUB_PATH"
+      - run: flutter pub get --enforce-lockfile
+      - name: Test dei pacchetti Dart
+        run: |
+          for p in packages/ms_protocol packages/ms_core packages/ms_l10n packages/ms_minecraft packages/ms_session packages/ms_modpack apps/guard apps/cli apps/launcher; do
+            echo "== $p"
+            (cd "$p" && dart test -r expanded)
+          done
+
+  build:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - name: Librerie di sistema (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          # libayatana-appindicator3: icona nella barra di sistema (tray_manager);
+          # libnotify: notifiche (local_notifier)
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev \
+            libayatana-appindicator3-dev libnotify-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - name: App desktop
+        working-directory: apps/desktop
+        # La chiave pubblica di firma degli aggiornamenti (non segreta) è una
+        # variabile del repository; senza, l'app non si aggiorna da sola.
+        env:
+          MINESYNC_UPDATE_PUBKEY: ${{ vars.MINESYNC_UPDATE_PUBKEY }}
+        run: >-
+          flutter build ${{ runner.os == 'Linux' && 'linux' || runner.os == 'Windows' && 'windows' || 'macos' }}
+          --release --dart-define=MINESYNC_UPDATE_PUBKEY="$MINESYNC_UPDATE_PUBKEY"
+      - name: Hub web (wasm con fallback JS)
+        if: runner.os == 'Linux'
+        working-directory: apps/hub_web
+        run: flutter build web --wasm
+      - name: CLI, guard e launcher
+        run: |
+          mkdir -p dist
+          ext=""; [ "$RUNNER_OS" = Windows ] && ext=.exe
+          dart compile exe apps/cli/bin/minesync_cli.dart -o dist/minesync$ext
+          dart compile exe apps/guard/bin/minesync_guard.dart -o dist/minesync-guard$ext
+          # launcher: MineSync.exe (senza console) su Windows, MineSync dentro
+          # MineSync.app su macOS, minesync-launcher su Linux
+          case "$RUNNER_OS" in
+            Windows) launcher=dist/MineSync.exe ;;
+            macOS) launcher=dist/MineSync ;;
+            *) launcher=dist/minesync-launcher ;;
+          esac
+          dart compile exe apps/launcher/bin/minesync_launcher.dart -o "$launcher"
+          "$launcher" --selftest
+          if [ "$RUNNER_OS" = Windows ]; then
+            dart run apps/launcher/bin/minesync_release.dart gui-subsystem "$launcher"
+          fi
+      - name: Hub (linux amd64 e arm64)
+        if: runner.os == 'Linux'
+        run: |
+          dart compile exe --target-os linux --target-arch x64 apps/hub/bin/hub.dart -o dist/minesync-hub-amd64
+          dart compile exe --target-os linux --target-arch arm64 apps/hub/bin/hub.dart -o dist/minesync-hub-arm64
+
+  # Pacchetti desktop per gli utenti (tools/package/README.md): AppImage,
+  # installer Windows per utente, dmg. Solo su push e a mano, non sulle pull
+  # request. Firma con una chiave usa-e-getta generata qui (la vera serve solo
+  # al workflow del rilascio sul tag), poi controlli della struttura senza
+  # aprire finestre e artefatti a vita breve.
+  package:
+    needs: check
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux-x64, os: ubuntu-24.04 }
+          - { platform: linux-arm64, os: ubuntu-24.04-arm }
+          - { platform: windows-x64, os: windows-latest }
+          - { platform: macos-arm64, os: macos-latest }
+          - { platform: macos-x64, os: macos-15-intel }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      # Flutter sull'host: compila Windows e macOS; su Linux serve solo ai
+      # controlli (la build Linux gira nel container Ubuntu 20.04).
+      - uses: subosito/flutter-action@v2
+        if: runner.arch != 'ARM64' || runner.os != 'Linux'
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Flutter (Linux arm64)
+        if: runner.arch == 'ARM64' && runner.os == 'Linux'
+        run: |
+          git clone --depth 1 -b "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$HOME/flutter"
+          echo "$HOME/flutter/bin" >> "$GITHUB_PATH"
+      - name: Pacchetto
+        env:
+          MINESYNC_UPDATE_PUBKEY: ${{ vars.MINESYNC_UPDATE_PUBKEY }}
+          # glibc 2.31: su Linux si compila dentro ubuntu:20.04
+          MINESYNC_PKG_CONTAINER: ${{ runner.os == 'Linux' && 'ubuntu:20.04' || '' }}
+        run: tools/package/desktop.sh ${{ matrix.platform }} dist
+      - name: Firma con una chiave usa-e-getta
+        run: |
+          rel=build/package/${{ matrix.platform }}/bin/minesync_release
+          [ "$RUNNER_OS" = Windows ] && rel=$rel.exe
+          # D:\a\_temp -> D:/a/_temp: va bene sia per bash sia per gli exe nativi
+          tmp="${RUNNER_TEMP//\\//}/throwaway"
+          pub=$("$rel" keygen --out "$tmp" | tr -d '\r')
+          echo "::add-mask::$(cat "$tmp/signing.key")"
+          echo "MINESYNC_VERIFY_PUBKEY=$pub" >> "$GITHUB_ENV"
+          MINESYNC_RELEASE="$rel" MINESYNC_UPDATE_KEY="$(tr -d '\r' < "$tmp/signing.key")" \
+            tools/package/sign.sh dist
+          rm -rf "$tmp"
+      - name: Controlli del pacchetto
+        run: tools/package/verify.sh ${{ matrix.platform }} dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: minesync-${{ matrix.platform }}
+          path: dist
+          retention-days: 7
+          if-no-files-found: error

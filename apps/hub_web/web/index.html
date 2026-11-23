@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!--
+    Served by the hub from MINESYNC_WEB (docs/design/protocol.md, "Static web
+    UI"). The hub replaces __BUILD__ with the build id: everything under
+    /b/<id>/ is immutable and cached for a year, this page is no-cache.
+    No inline scripts (CSP script-src 'self'); inline styles are allowed.
+    Paths are absolute so deep links (/server/<id>, /admin) load the same
+    files; the base href ("/") is what Flutter's path URL strategy reads.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="MineSync hub">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#17140f">
+  <meta name="minesync-build" content="__BUILD__">
+  <link rel="icon" type="image/png" href="/b/__BUILD__/favicon.png">
+  <link rel="apple-touch-icon" href="/b/__BUILD__/icons/Icon-192.png">
+  <link rel="manifest" href="/manifest.json">
+  <title>MineSync Hub</title>
+  <style>
+    /* Pixel splash in pure HTML/CSS: it shows at the first byte, before Flutter. */
+    html, body { margin: 0; height: 100%; background: #17140f; color: #f6eedb; }
+    #splash { position: fixed; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 18px;
+      font: 16px/1.4 monospace; letter-spacing: 1px; }
+    #splash .logo { width: 48px; height: 48px; image-rendering: pixelated;
+      background:
+        linear-gradient(#9be06a 0 0) 0 0/100% 33% no-repeat,
+        linear-gradient(#7a5332 0 0) 0 100%/100% 67% no-repeat;
+      box-shadow: 0 0 0 4px #050403; }
+    #splash .bar { width: 160px; height: 10px; box-shadow: 0 0 0 3px #050403;
+      background: #110e0a; overflow: hidden; }
+    #splash .bar i { display: block; height: 100%; width: 30%; background: #62b53c;
+      animation: run 1.1s steps(8) infinite; }
+    #splash .msg:empty { display: none; }
+    @keyframes run { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+    @media (prefers-reduced-motion: reduce) { #splash .bar i { animation: none; width: 100%; } }
+    body.ready #splash { display: none; }
+  </style>
+</head>
+<body>
+  <div id="splash" role="status" aria-live="polite">
+    <div class="logo"></div>
+    <div>MINESYNC</div>
+    <div class="msg"></div>
+    <div class="bar"><i></i></div>
+    <noscript>
+      <p lang="en">The hub web UI needs JavaScript.</p>
+      <p lang="it">La web UI dell'hub ha bisogno di JavaScript.</p>
+    </noscript>
+  </div>
+  <script src="/b/__BUILD__/flutter_bootstrap.js" defer></script>
+</body>
+</html>

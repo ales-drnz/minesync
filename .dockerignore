@@ -1,0 +1,15 @@
+# Contesto di deploy/Dockerfile (la radice del repository): servono solo i
+# sorgenti del workspace, LICENSE, VERSION e deploy/dl/.
+.git
+.github
+.claude
+**/.dart_tool
+**/build
+**/.flutter-plugins-dependencies
+**/test
+docs
+tools
+*.md
+*.key
+*.log
+minesync-sign*

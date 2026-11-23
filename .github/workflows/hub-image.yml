@@ -1,0 +1,148 @@
+# Immagine Docker dell'hub (deploy/Dockerfile): build linux/amd64 + arm64
+# con buildx e prova di fumo dell'immagine amd64 (deploy/smoke-test.sh).
+#
+# - push su main, pull request, workflow_dispatch: solo build e
+#   prova, niente pubblicazione; /dl dell'immagine è vuota.
+# - workflow_call da release.yml: /dl dall'artefatto firmato della release e,
+#   solo se `push` è vero (tag v*), pubblicazione su ghcr.io. L'immagine si
+#   pubblica soltanto da qui, chiamata da release.yml: questo workflow non
+#   ha un trigger sui tag, quindi un tag non la pubblica due volte.
+name: Hub image
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      push:
+        description: Pubblica su ghcr.io (solo dai tag v*)
+        type: boolean
+        default: false
+      dl-artifact:
+        description: Artefatto con i download firmati da mettere in /dl
+        type: string
+        default: ''
+
+concurrency:
+  # In una chiamata github.event_name è quello del chiamante: la si riconosce
+  # da dl-artifact, che solo release.yml passa. Una release non si annulla.
+  group: hub-image-${{ inputs.dl-artifact != '' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ inputs.dl-artifact == '' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Versione
+        id: meta
+        run: |
+          tools/check_version.sh
+          echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+      - name: Download firmati in deploy/dl
+        if: inputs.dl-artifact != ''
+        uses: actions/download-artifact@v5
+        with:
+          name: ${{ inputs.dl-artifact }}
+          path: deploy/dl
+      - name: Contenuto di /dl
+        run: |
+          # i binari dell'hub stanno nella release GitHub, non nei download
+          # che la web UI mostra agli amici
+          rm -f deploy/dl/minesync-hub-*
+          find deploy/dl -type f | sort
+      - uses: docker/setup-buildx-action@v3
+      # gli stage di build girano su $BUILDPLATFORM e lo stage finale non ha
+      # RUN: per arm64 non serve qemu
+      - name: Build linux/amd64 + linux/arm64
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            REVISION=${{ github.sha }}
+            SOURCE=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=hub-image
+          cache-to: type=gha,mode=max,scope=hub-image
+          provenance: false
+          push: false
+      - name: Immagine amd64 locale per la prova
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            REVISION=${{ github.sha }}
+            SOURCE=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=hub-image
+          provenance: false
+          load: true
+          tags: minesync-hub:smoke
+      - name: Prova di fumo (amd64)
+        run: deploy/smoke-test.sh minesync-hub:smoke ${{ inputs.dl-artifact != '' && '--expect-dl' || '' }}
+      - name: Dimensione
+        run: docker image ls minesync-hub:smoke
+
+  # Solo da release.yml su un tag v*: stesso contesto e stessa cache, quindi
+  # la stessa immagine provata sopra.
+  publish:
+    needs: build
+    if: inputs.push
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Download firmati in deploy/dl
+        if: inputs.dl-artifact != ''
+        uses: actions/download-artifact@v5
+        with:
+          name: ${{ inputs.dl-artifact }}
+          path: deploy/dl
+      - run: rm -f deploy/dl/minesync-hub-*
+      - name: Nome e tag
+        id: tags
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          image="ghcr.io/${OWNER,,}/minesync-hub"
+          # X.Y.Z esatta, X.Y per restare su una minore, latest per l'ultima
+          tags="$image:$VERSION,$image:${VERSION%.*},$image:latest"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pubblicazione
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ needs.build.outputs.version }}
+            REVISION=${{ github.sha }}
+            SOURCE=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=hub-image
+          provenance: false
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}

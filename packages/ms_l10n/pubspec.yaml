@@ -1,0 +1,12 @@
+name: ms_l10n
+description: "Italian and English strings shared by every MineSync component."
+publish_to: none
+version: 0.1.0
+resolution: workspace
+
+environment:
+  sdk: ^3.10.0
+
+dev_dependencies:
+  ms_protocol: ^0.1.0
+  test: ^1.26.0

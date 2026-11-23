@@ -1,0 +1,40 @@
+name: minesync_desktop
+description: "The MineSync desktop app."
+publish_to: none
+version: 0.1.0
+resolution: workspace
+
+environment:
+  sdk: ^3.10.0
+  flutter: ">=3.47.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  ms_core: ^0.1.0
+  ms_l10n: ^0.1.0
+  ms_minecraft: ^0.1.0
+  ms_modpack: ^0.1.0
+  ms_protocol: ^0.1.0
+  ms_session: ^0.1.0
+  ms_ui: any
+  minesync_launcher: ^0.1.0
+  path: ^1.9.1
+  # Integrazione col sistema (licenza MIT, Linux/Windows/macOS). Si resta
+  # sulle 0.5.x/0.1.x a canale di metodi: le versioni nuove richiedono
+  # Flutter >= 3.50 e un'architettura nativa diversa (nativeapi).
+  local_notifier: ^0.1.6
+  screen_retriever: ^0.2.0
+  tray_manager: ^0.5.3
+  window_manager: ^0.5.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  # SHA dei jar finti nei test del modpack (BSD-3, già nel workspace)
+  crypto: ^3.0.8
+  minesync_hub: ^0.1.0
+
+flutter:
+  assets:
+    - assets/tray/
