@@ -36,7 +36,7 @@ Future<void> loadFonts() async {
 const sampleMe = Me(id: 'a1a1a1a1a1', name: 'alice', admin: true);
 
 HubInfo sampleHub({bool admin = true}) => HubInfo(
-  name: 'Hub di casa',
+  name: 'Homelab',
   version: '0.1.0',
   api: 1,
   time: DateTime.utc(2026, 11, 22, 18).millisecondsSinceEpoch,

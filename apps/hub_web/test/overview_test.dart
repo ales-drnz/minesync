@@ -43,7 +43,7 @@ void main() {
     await t.tap(find.byWidgetPredicate((w) => w is MsCard && w.semanticLabel == 'Apri Creativo'));
     await settle(t);
     expect(find.byWidgetPredicate((w) => w is ServerPage && w.id == 'creativo'), findsOneWidget);
-    expect(documentTitle(t), 'Creativo: Panoramica (Hub di casa)');
+    expect(documentTitle(t), 'Creativo: Panoramica (Homelab)');
   });
 
   testWidgets('attività: badge per tipo, frasi, filtri', (t) async {

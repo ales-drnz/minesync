@@ -42,21 +42,21 @@ void main() {
   testWidgets('schede dell\'header e titoli delle pagine; indietro', (t) async {
     await pumpHub(t, testState());
     expect(find.byType(OverviewPage), findsOneWidget);
-    expect(documentTitle(t), 'Server (Hub di casa)');
+    expect(documentTitle(t), 'Server (Homelab)');
     await t.tap(find.bySemanticsLabel('Download'));
     await settle(t);
     expect(find.byType(DownloadPage), findsOneWidget);
-    expect(documentTitle(t), 'Download (Hub di casa)');
+    expect(documentTitle(t), 'Download (Homelab)');
     await t.tap(find.bySemanticsLabel('Admin').first);
     await settle(t);
     expect(find.byType(AdminPage), findsOneWidget);
-    expect(documentTitle(t), 'Amministrazione (Hub di casa)');
+    expect(documentTitle(t), 'Amministrazione (Homelab)');
     unawaited(routerOf(t).push(HubRoutes.adminSection(AdminSection.telegram)));
     await settle(t);
-    expect(documentTitle(t), 'Telegram (Hub di casa)');
+    expect(documentTitle(t), 'Telegram (Homelab)');
     routerOf(t).pop();
     await settle(t);
-    expect(documentTitle(t), 'Amministrazione (Hub di casa)');
+    expect(documentTitle(t), 'Amministrazione (Homelab)');
   });
 
   testWidgets('membro: niente scheda Admin, /admin dice "riservata agli admin"', (t) async {
@@ -72,7 +72,7 @@ void main() {
       find.byWidgetPredicate((w) => w is ServerPage && w.tab == ServerTab.history),
       findsOneWidget,
     );
-    expect(documentTitle(t), 'Survival: Storia (Hub di casa)');
+    expect(documentTitle(t), 'Survival: Storia (Homelab)');
     await t.tap(find.bySemanticsLabel(RegExp(r'^Mod\b')).first);
     await settle(t);
     expect(
@@ -132,7 +132,7 @@ void main() {
     expect(s.lang, Lang.en);
     expect(fakePlatform(s).prefs[PrefKeys.lang], 'en');
     expect(find.bySemanticsLabel('Servers'), findsWidgets);
-    expect(documentTitle(t), 'Servers (Hub di casa)');
+    expect(documentTitle(t), 'Servers (Homelab)');
     final light = MsTheme.of(t.element(find.byType(OverviewPage))).brightness == Brightness.light;
     await t.tap(find.bySemanticsLabel(light ? 'Switch to dark theme' : 'Switch to light theme'));
     await t.pump();

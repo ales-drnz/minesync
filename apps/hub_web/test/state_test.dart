@@ -30,7 +30,7 @@ void main() {
       s.start();
       async.flushMicrotasks();
       expect(s.connection, HubConnection.online);
-      expect(s.hub!.name, 'Hub di casa');
+      expect(s.hub!.name, 'Homelab');
       expect(s.spaces, hasLength(3));
       expect(s.events.map((e) => e.seq).first, 8);
       expect(api.calls, contains('events after=null before=9007199254740991'));

@@ -79,7 +79,7 @@ void main() {
   test('GET /hub: URL sotto /api/v1, niente X-MineSync, decodifica', () async {
     tr.routes['GET /api/v1/hub'] = (_) => ok(sampleHub().toJson());
     final h = await api.hub();
-    expect(h.name, 'Hub di casa');
+    expect(h.name, 'Homelab');
     expect(h.me.name, 'alice');
     expect(tr.sent.single.url.toString(), 'http://192.0.2.1:8084/api/v1/hub');
     expect(tr.sent.single.headers.containsKey('X-MineSync'), isFalse);

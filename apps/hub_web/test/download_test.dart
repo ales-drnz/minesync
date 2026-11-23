@@ -45,7 +45,7 @@ void main() {
     expect(msText('MineSync per Windows'), findsOneWidget);
     await t.tap(msButton('Scarica per Windows'));
     expect(fakePlatform(s).downloads, [Uri.parse('http://192.0.2.1/dl/MineSync-0.1.0-setup.exe')]);
-    expect(documentTitle(t), 'Download (Hub di casa)');
+    expect(documentTitle(t), 'Download (Homelab)');
   });
 
   testWidgets('tutte le piattaforme e SHA-256 copiabile', (t) async {

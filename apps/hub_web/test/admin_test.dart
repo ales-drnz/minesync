@@ -57,7 +57,7 @@ void main() {
     testWidgets('nome: PATCH dopo la pausa, Modificato, era, Ripristina', (t) async {
       final (s, api) = adminState();
       await openAdmin(t, s, 'general');
-      expect(msText('Predefinito: MineSync, 11 di 40 caratteri'), findsOneWidget);
+      expect(msText('Predefinito: MineSync, 7 di 40 caratteri'), findsOneWidget);
       await t.enterText(input('Nome dell\'hub'), 'Hub nuovo');
       await t.pump();
       // prima della pausa niente PATCH, c'è la barra delle modifiche
@@ -70,10 +70,10 @@ void main() {
       expectPatch(api.patches.single, 'general', {'name': 'Hub nuovo'});
       expect(toastTitled('Salvato e attivo'), findsOneWidget);
       expect(find.byWidgetPredicate((w) => w is MsPill && w.label == 'Modificato'), findsOneWidget);
-      expect(msText('era Hub di casa'), findsOneWidget);
+      expect(msText('era Homelab'), findsOneWidget);
       await t.tap(msButton('Ripristina'));
       await autosave(t);
-      expectPatch(api.patches.last, 'general', {'name': 'Hub di casa'});
+      expectPatch(api.patches.last, 'general', {'name': 'Homelab'});
     });
 
     testWidgets('nome vuoto: errore sul campo, nessuna PATCH', (t) async {
@@ -101,7 +101,7 @@ void main() {
       await t.tap(msButton('Annulla'));
       await autosave(t);
       expect(api.patches, isEmpty);
-      expect(find.text('Hub di casa'), findsWidgets);
+      expect(find.text('Homelab'), findsWidgets);
       await t.enterText(input('Nome dell\'hub'), 'Altro nome');
       await t.pump();
       await t.tap(msButton('Salva e applica'));
@@ -517,7 +517,7 @@ void main() {
         find.byWidgetPredicate((w) => w is MsListRow && w.title == 'Salvataggio automatico ogni'),
       );
       await settle(t);
-      expect(documentTitle(t), 'Sessioni di gioco (Hub di casa)');
+      expect(documentTitle(t), 'Sessioni di gioco (Homelab)');
       expect(msText('1 server ha valori propri'), findsOneWidget);
     });
 

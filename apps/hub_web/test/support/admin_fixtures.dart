@@ -10,7 +10,7 @@ import 'fixtures.dart';
 
 HubSettings sampleSettings({SettingsChange? changed}) => HubSettings(
   sections: const SettingsSections(
-    general: GeneralSettings(name: 'Hub di casa'),
+    general: GeneralSettings(name: 'Homelab'),
     history: HistorySettings(keepLast: 30, keepHours: 24, keepDays: 14),
     protection: ProtectionSettings(massDeleteRatio: 0.4),
   ),

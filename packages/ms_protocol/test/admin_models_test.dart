@@ -195,7 +195,7 @@ void main() {
     test('HubSettings andata e ritorno; sezione mancante o campo del tipo sbagliato', () {
       const v = HubSettings(
         sections: SettingsSections(
-          general: GeneralSettings(name: 'Hub di casa', language: 'it'),
+          general: GeneralSettings(name: 'Homelab', language: 'it'),
           exclusions: ExclusionSettings(minecraft: ['logs/**'], generic: []),
         ),
         changed: SettingsChange(by: 'bob', byId: 'n-bob', at: 5, section: 'sessions'),

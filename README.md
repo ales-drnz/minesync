@@ -186,10 +186,12 @@ On the PC that hosts, allow the Minecraft port (25565 by default) through the fi
   <img src="https://raw.githubusercontent.com/ales-drnz/minesync/main/imgs/hub-admin.png" width="100%">
 </p>
 
-#### On a phone
+#### On a phone: servers, a server's page and the downloads
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ales-drnz/minesync/main/imgs/hub-phone.png" width="320">
+  <img src="https://raw.githubusercontent.com/ales-drnz/minesync/main/imgs/phone-home.png" width="32%">
+  <img src="https://raw.githubusercontent.com/ales-drnz/minesync/main/imgs/phone-server.png" width="32%">
+  <img src="https://raw.githubusercontent.com/ales-drnz/minesync/main/imgs/phone-download.png" width="32%">
 </p>
 
 ---
@@ -350,7 +352,7 @@ dart compile exe apps/hub/bin/hub.dart -o build/minesync-hub
 docker build --build-arg VERSION=$(cat VERSION) -t minesync-hub -f deploy/Dockerfile .
 ```
 
-The repository is a pub workspace with one lockfile. The screenshots above are drawn by the apps themselves in their golden tests: after a visual change, regenerate the goldens and run `tools/readme_images.sh`.
+The repository is a pub workspace with one lockfile. The screenshots above are drawn by the apps themselves, in `apps/desktop/test/readme` and `apps/hub_web/test/readme`: after a visual change, `flutter test --update-goldens test/readme` in each app refreshes them.
 
 More in the guides: [running the hub](docs/guide/hub.md), [the desktop app and the CLI](docs/guide/app.md), [modpacks](docs/guide/modpacks.md), and in the [architecture](docs/design/architecture.md), [protocol](docs/design/protocol.md) and [behaviour rules](docs/spec/behaviour.md).
 

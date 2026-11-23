@@ -12,7 +12,7 @@ const bob = Me(id: 'b2b2b2b2b2', name: 'bob', admin: false);
 const carol = Me(id: 'c3c3c3c3c3', name: 'carol', admin: false);
 
 HubInfo sampleHub({Me me = alice, bool lowDisk = false, String language = 'auto'}) => HubInfo(
-  name: 'Hub di casa',
+  name: 'Homelab',
   version: '0.1.0',
   api: 1,
   time: testNow.millisecondsSinceEpoch,

@@ -14,19 +14,22 @@ import 'support/app_harness.dart';
 import 'support/finders.dart';
 import 'support/session_fixtures.dart';
 
-AppState _state(SessionController? s, {Map<String, Object?> prefs = const {}, PortCheck? port}) =>
-    testState(
-      prefs: prefs,
-      setup: (a) {
-        a.debugSetSession(s);
-        a.debugSet(route: const SessionRoute('survival'));
-        if (port != null) a.debugSet(spaces: _hosted(port));
-      },
-    );
+AppState sessionAppState(
+  SessionController? s, {
+  Map<String, Object?> prefs = const {},
+  PortCheck? port,
+}) => testState(
+  prefs: prefs,
+  setup: (a) {
+    a.debugSetSession(s);
+    a.debugSet(route: const SessionRoute('survival'));
+    if (port != null) a.debugSet(spaces: hostedSpaces(port));
+  },
+);
 
 /// Survival ospitato da questo PC (alice), con il nome DNS dell'hub, l'IP
 /// visto dall'hub e la prova della porta.
-List<SpaceSummary> _hosted(PortCheck port) {
+List<SpaceSummary> hostedSpaces(PortCheck port) {
   final spaces = sampleSpaces();
   final sp = spaces.first;
   spaces[0] = SpaceSummary(
@@ -50,7 +53,7 @@ List<SpaceSummary> _hosted(PortCheck port) {
   return spaces;
 }
 
-final _reachable = PortCheck(
+final reachablePort = PortCheck(
   state: PortState.reachable,
   port: 25565,
   checkedAt: at(18, 3).millisecondsSinceEpoch,
@@ -66,7 +69,7 @@ void main() {
     await expectAppGolden(
       t,
       'session_running',
-      _state(sampleSession(), port: _reachable),
+      sessionAppState(sampleSession(), port: reachablePort),
       size: const Size(1280, 1500),
     );
   });
@@ -81,7 +84,7 @@ void main() {
     await expectAppGolden(
       t,
       'session_uploading_light',
-      _state(s, prefs: const {'theme': 'light'}),
+      sessionAppState(s, prefs: const {'theme': 'light'}),
       size: const Size(1280, 1500),
       dprs: const [1.0],
     );
@@ -92,7 +95,7 @@ void main() {
       phase: SessionPhase.ended,
       setup: (s) => s.debugSet(alerts: {'lockLost'}, alertAt: at(18, 44)),
     );
-    await expectAppGolden(t, 'session_lock_lost', _state(s), size: const Size(1280, 1500));
+    await expectAppGolden(t, 'session_lock_lost', sessionAppState(s), size: const Size(1280, 1500));
   });
 
   testWidgets('arresto in corso e hub irraggiungibile: golden', (t) async {
@@ -100,18 +103,18 @@ void main() {
       phase: SessionPhase.stopping,
       setup: (s) => s.debugSet(hubUnreachable: true, alerts: {'hubDiskFull'}),
     );
-    await expectAppGolden(t, 'session_stopping', _state(s), size: const Size(1280, 1500));
+    await expectAppGolden(t, 'session_stopping', sessionAppState(s), size: const Size(1280, 1500));
   });
 
   testWidgets('nessuna sessione su questo server', (t) async {
     // senza sessione torna la panoramica del server
-    await pumpApp(t, _state(null));
+    await pumpApp(t, sessionAppState(null));
     expect(find.byType(ServerScreen), findsOneWidget);
   });
 
   testWidgets('console: filtri per livello e ricerca', (t) async {
     final s = sampleSession();
-    await pumpApp(t, _state(s), size: const Size(1280, 1500));
+    await pumpApp(t, sessionAppState(s), size: const Size(1280, 1500));
     expect(find.text('bob joined the game'), findsOneWidget);
     await t.tap(find.bySemanticsLabel('Errori 1').first);
     await t.pump();
@@ -128,7 +131,7 @@ void main() {
 
   testWidgets('console: invio comando e cronologia con le frecce', (t) async {
     final s = sampleSession();
-    await pumpApp(t, _state(s), size: const Size(1280, 1500));
+    await pumpApp(t, sessionAppState(s), size: const Size(1280, 1500));
     final input = find.bySemanticsLabel('Comando per il server');
     await t.enterText(input, 'say ciao');
     await t.testTextInput.receiveAction(TextInputAction.done);
@@ -147,7 +150,11 @@ void main() {
   testWidgets('B-DNS-01 come entrano gli amici: indirizzo fisso, IP diretto, porta provata', (
     t,
   ) async {
-    await pumpApp(t, _state(sampleSession(), port: _reachable), size: const Size(1280, 1500));
+    await pumpApp(
+      t,
+      sessionAppState(sampleSession(), port: reachablePort),
+      size: const Size(1280, 1500),
+    );
     expect(find.text('zerotier.survival.internal'), findsOneWidget);
     expect(msText('192.0.2.10:25565'), findsWidgets);
     expect(_pill('Porta raggiungibile'), findsOneWidget);
@@ -156,7 +163,7 @@ void main() {
   });
 
   testWidgets('porta chiusa: spiegazione; in prova: niente Riprova', (t) async {
-    final a = _state(
+    final a = sessionAppState(
       sampleSession(),
       port: PortCheck(
         state: PortState.blocked,
@@ -167,7 +174,7 @@ void main() {
     await pumpApp(t, a, size: const Size(1280, 1500));
     expect(_pill('Porta chiusa'), findsOneWidget);
     expect(find.textContaining('Controlla il firewall'), findsOneWidget);
-    a.debugSet(spaces: _hosted(const PortCheck(state: PortState.pending, port: 25565)));
+    a.debugSet(spaces: hostedSpaces(const PortCheck(state: PortState.pending, port: 25565)));
     await t.pump();
     expect(_pill('Verifica della porta…'), findsOneWidget);
     final retry = t.widget<MsButton>(msButton('Riprova'));
@@ -175,7 +182,7 @@ void main() {
   });
 
   testWidgets('senza DNS e senza sessione dell\'hub: le interfacce di questo PC', (t) async {
-    await pumpApp(t, _state(sampleSession()), size: const Size(1280, 1500));
+    await pumpApp(t, sessionAppState(sampleSession()), size: const Size(1280, 1500));
     expect(find.text('192.0.2.10:25565'), findsOneWidget);
     expect(_pill('Porta raggiungibile'), findsNothing);
   });
@@ -197,7 +204,7 @@ void main() {
   });
 
   testWidgets('in inglese', (t) async {
-    final a = _state(sampleSession());
+    final a = sessionAppState(sampleSession());
     a.config.lang = 'en';
     await pumpApp(t, a, size: const Size(1280, 1500));
     expect(find.text('Survival running on this PC'), findsOneWidget);
