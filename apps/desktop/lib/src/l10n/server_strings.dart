@@ -51,13 +51,8 @@ abstract final class ServerStrings {
   String playingTitle(String who);
   String playingText(String since, int online);
   String copyAddressLabel(String address);
-  String get copyTip;
-  String hostOn(String who);
   String get noAddress;
-  String get fixedNote;
-  String hostLater(String who);
   String get notifyMe;
-  String get notifyText;
   String get notifyOn;
   String lastSignal(String ago);
   String get worldWhere;
@@ -76,7 +71,6 @@ abstract final class ServerStrings {
   String maybeValue(String time);
   String staleAdvice(String who, int n);
   String get forcePlay;
-  String get confirmTwice;
   String wait(String who);
   String get willNotify;
 
@@ -137,9 +131,6 @@ abstract final class ServerStrings {
   String get change;
   String get folderLater;
   String firstDownload(String size);
-  String get joinTitle;
-  String joinNeeds(List<String> what, bool modded);
-  String get joinPack;
   String get address;
   String get pull;
   String get push;
@@ -262,24 +253,16 @@ final class _It implements ServerStrings {
   @override
   String playingText(String since, int online) =>
       'Da $since, $online online. Per entrare: Minecraft › Multigiocatore › Aggiungi server, '
-      'con l\'indirizzo che trovi qui sotto.';
+      'con questo indirizzo.';
   @override
   String copyAddressLabel(String address) => 'Copia indirizzo $address';
-  @override
-  String get copyTip => 'Copia negli appunti';
-  @override
-  String hostOn(String who) => 'Il server gira sul PC di $who.';
+
   @override
   String get noAddress => 'Indirizzo disponibile quando il server è pronto.';
-  @override
-  String get fixedNote =>
-      'Indirizzo fisso, uguale per chiunque ospiti. In alternativa, l\'IP diretto';
-  @override
-  String hostLater(String who) => 'Il server sarà disponibile quando $who lo chiude.';
+
   @override
   String get notifyMe => 'Avvisa quando è libero';
-  @override
-  String get notifyText => 'notifica sul desktop';
+
   @override
   String get notifyOn => 'Avviso attivo';
   @override
@@ -320,8 +303,7 @@ final class _It implements ServerStrings {
       'Se aspetti, $who può tornare e salvarli. Se forzi, si riparte dall\'ultimo salvataggio.';
   @override
   String get forcePlay => 'Forza e gioca…';
-  @override
-  String get confirmTwice => 'richiede due conferme';
+
   @override
   String wait(String who) => 'Attendi $who';
   @override
@@ -462,16 +444,7 @@ final class _It implements ServerStrings {
   String get folderLater => 'Il server viene scaricato qui al primo avvio.';
   @override
   String firstDownload(String size) => '$size da scaricare al primo avvio';
-  @override
-  String get joinTitle => 'Per entrare';
-  @override
-  String joinNeeds(List<String> what, bool modded) => what.isEmpty
-      ? 'In Minecraft: Multigiocatore › Aggiungi server, con l\'indirizzo di chi ospita.'
-      : modded
-      ? 'Richiede ${what.join(' e ')} con le mod del pacchetto per i giocatori.'
-      : 'Richiede ${what.join(' e ')}.';
-  @override
-  String get joinPack => 'Pacchetto per i giocatori';
+
   @override
   String get address => 'Indirizzo';
   @override
@@ -656,23 +629,16 @@ final class _En implements ServerStrings {
   @override
   String playingText(String since, int online) =>
       'For $since, $online online. To join: Minecraft › Multiplayer › Add Server, with the '
-      'address below.';
+      'this address.';
   @override
   String copyAddressLabel(String address) => 'Copy address $address';
-  @override
-  String get copyTip => 'Copy to the clipboard';
-  @override
-  String hostOn(String who) => 'The server runs on $who\'s PC.';
+
   @override
   String get noAddress => 'Address available when the server is ready.';
-  @override
-  String get fixedNote => 'Fixed address, the same whoever hosts. Alternatively, the direct IP';
-  @override
-  String hostLater(String who) => 'The server will be available when $who closes it.';
+
   @override
   String get notifyMe => 'Notify when free';
-  @override
-  String get notifyText => 'desktop notification';
+
   @override
   String get notifyOn => 'Notification on';
   @override
@@ -713,8 +679,7 @@ final class _En implements ServerStrings {
       'If you wait, $who can come back and save them. If you force, it restarts from the last save.';
   @override
   String get forcePlay => 'Force and play…';
-  @override
-  String get confirmTwice => 'requires two confirmations';
+
   @override
   String wait(String who) => 'Wait for $who';
   @override
@@ -854,16 +819,7 @@ final class _En implements ServerStrings {
   String get folderLater => 'The server is downloaded here on first start.';
   @override
   String firstDownload(String size) => '$size to download on first start';
-  @override
-  String get joinTitle => 'To join';
-  @override
-  String joinNeeds(List<String> what, bool modded) => what.isEmpty
-      ? 'In Minecraft: Multiplayer › Add Server, with the host\'s address.'
-      : modded
-      ? 'Requires ${what.join(' and ')} with the mods of the players pack.'
-      : 'Requires ${what.join(' and ')}.';
-  @override
-  String get joinPack => 'Players pack';
+
   @override
   String get address => 'Address';
   @override

@@ -201,10 +201,15 @@ void main() {
     final s = serverState(route: 'survival');
     await pumpApp(t, s);
     expect(msText('bob sta giocando'), findsWidgets);
-    // indirizzo fisso dell'hub, l'IP diretto di chi ospita come alternativa
+    // indirizzo fisso dell'hub con «Copia», nel pannello in alto
     expect(msText('zerotier.survival.internal'), findsOneWidget);
-    expect(msTextContaining('In alternativa, l\'IP diretto 192.0.2.31:25565'), findsOneWidget);
-    expect(msButton('Forza e gioca… (admin)'), findsOneWidget);
+    expect(msButton('Copia'), findsOneWidget);
+    // forzare (admin) sta nel menu «Altro»
+    await t.tap(msButton('Altro'));
+    await t.pump();
+    expect(find.bySemanticsLabel('Forza e gioca… (admin)'), findsOneWidget);
+    await t.sendKeyEvent(LogicalKeyboardKey.escape);
+    await t.pump();
     // al posto del Gioca spento: «Avvisa quando è libero»
     await t.tap(msButton('Avvisa quando è libero'));
     await t.pump();
@@ -213,7 +218,9 @@ void main() {
 
     final m = serverState(route: 'survival', admin: false);
     await pumpApp(t, m);
-    expect(msButton('Forza e gioca… (admin)'), findsNothing);
+    await t.tap(msButton('Altro'));
+    await t.pump();
+    expect(find.bySemanticsLabel('Forza e gioca… (admin)'), findsNothing);
   });
 
   testWidgets('la propria sessione rimasta appesa: «Riprendi», senza conferme', (t) async {
@@ -308,7 +315,12 @@ void main() {
   testWidgets('forza e gioca, seconda conferma: golden', (t) async {
     final s = serverState(route: 'survival');
     await pumpApp(t, s);
-    await t.tap(msButton('Forza e gioca… (admin)'));
+    await t.tap(msButton('Altro'));
+    await t.pump();
+    // ultima voce del menu «Altro», da tastiera
+    await t.sendKeyEvent(LogicalKeyboardKey.end);
+    await t.pump();
+    await t.sendKeyEvent(LogicalKeyboardKey.enter);
     await t.pump(const Duration(seconds: 1));
     await t.tap(msButton('Continua…'));
     await t.pump(const Duration(seconds: 1));

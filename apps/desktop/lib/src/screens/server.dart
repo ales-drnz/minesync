@@ -82,9 +82,6 @@ class _ServerScreenState extends State<ServerScreen> {
             if (_visible(ss.outcome)) _Outcome(state: ss),
             if (ss.transfer != null) _TransferPanel(space: sp, state: ss),
             _PcPanel(space: sp, state: ss),
-            // sotto, a tutta larghezza su una riga: non dipende dall'altezza
-            // di «Sul tuo PC»
-            _JoinPanel(space: sp, view: view),
           ],
         );
       },
@@ -205,6 +202,12 @@ class _Header extends StatelessWidget {
               icon: const MsIcon(MsIcons.folder),
               onSelected: state.folder != null ? state.openFolder : null,
             ),
+            if (view == LockView.play && (app.me?.admin ?? false))
+              MsMenuItem(
+                label: s.forceAdmin,
+                icon: const MsIcon(MsIcons.unlock),
+                onSelected: () => showForceDialog(context, space.id),
+              ),
           ],
         ),
       ],
@@ -223,6 +226,7 @@ class _PlayFrame extends StatelessWidget {
     required this.title,
     required this.text,
     this.value,
+    this.monoValue = false,
     this.secondary,
     this.primary,
   });
@@ -230,6 +234,9 @@ class _PlayFrame extends StatelessWidget {
   final Widget title;
   final String text;
   final String? value;
+
+  /// [value] in monospazio (un indirizzo).
+  final bool monoValue;
   final Widget? secondary;
   final Widget? primary;
 
@@ -248,7 +255,10 @@ class _PlayFrame extends StatelessWidget {
       gap: 12,
       wrap: false,
       children: [
-        if (value != null) MsText.small(value!, tone: MsTextTone.secondary, maxLines: 1),
+        if (value != null)
+          monoValue
+              ? MsText.mono(value!, weight: 700, maxLines: 1)
+              : MsText.small(value!, tone: MsTextTone.secondary, maxLines: 1),
         ?secondary,
         ?primary,
       ],
@@ -325,19 +335,24 @@ class _OtherPanel extends StatelessWidget {
     final l = space.lock!;
     final since = strings.fmt.duration(app.now().difference(app.localTime(l.since)));
     final notify = app.notifyWhenFree(space.id);
-    // l'indirizzo per entrare sta in «Per entrare»
+    // l'indirizzo per entrare (fisso con il DNS, altrimenti l'IP di chi
+    // ospita) a destra con «Copia»; forzare (admin) sta nel menu «Altro»
+    final addrs = joinAddresses(space);
+    final address = addrs.fixed ?? addrs.direct;
     return _PlayFrame(
       label: s.playingTitle(l.name),
       title: MsRow(gap: 12, children: [MsAvatar(l.name), MsText.h3(s.playingTitle(l.name))]),
       text: s.playingText(since, l.info.players.length),
-      secondary: (app.me?.admin ?? false)
-          ? MsButton(
-              label: s.forceAdmin,
-              variant: MsButtonVariant.ghost,
-              icon: const MsIcon(MsIcons.unlock),
-              onPressed: () => showForceDialog(context, space.id),
-            )
-          : null,
+      value: address,
+      monoValue: true,
+      secondary: address == null
+          ? null
+          : MsButton(
+              label: s.copy,
+              icon: const MsIcon(MsIcons.copy),
+              semanticLabel: s.copyAddressLabel(address),
+              onPressed: () => copyText(context, address, s.copied),
+            ),
       primary: MsButton(
         label: notify ? s.notifyOn : s.notifyMe,
         size: MsButtonSize.lg,
@@ -579,96 +594,6 @@ class GenerationRow extends StatelessWidget {
         s.statsLabel(st.added, st.changed, st.removed),
       ]),
       trail: isHead ? MsPill(s.head, tone: MsStatusTone.ok) : null,
-    );
-  }
-}
-
-/// Come si entra: il pacchetto per i giocatori (le mod lato giocatore e la
-/// versione giusta) e l'indirizzo fisso, se l'hub ha il DNS.
-class _JoinPanel extends StatelessWidget {
-  const _JoinPanel({required this.space, required this.view});
-  final SpaceSummary space;
-  final LockView view;
-
-  @override
-  Widget build(BuildContext context) {
-    final app = AppStateScope.of(context);
-    final s = context.s.server;
-    final w = space.world;
-    final loader = w?.loader?.name;
-    final modded = loader != null && loader != 'vanilla';
-    final addrs = joinAddresses(space);
-    // l'indirizzo fisso c'è sempre; mentre qualcuno gioca, senza DNS, si
-    // mostra l'IP diretto di chi ospita
-    final address = addrs.fixed ?? (view == LockView.play ? addrs.direct : null);
-    return MsPanel(
-      title: s.joinTitle,
-      child: MsStack(
-        gap: 14,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LayoutBuilder(
-            builder: (context, box) {
-              final g = PixelScope.of(context);
-              final text = MsText(
-                s.joinNeeds([
-                  if (w?.mcVersion != null) s.minecraft(w!.mcVersion!),
-                  if (modded) [s.loaderName(loader), ?w?.loaderVersion].join(' '),
-                ], modded),
-              );
-              final pack = modded && space.profile == Profile.minecraft
-                  ? MsButton(
-                      label: s.joinPack,
-                      size: MsButtonSize.sm,
-                      icon: const MsIcon(MsIcons.players),
-                      onPressed: () => app.go(ModpackRoute(space.id, client: true)),
-                    )
-                  : null;
-              if (pack == null) return text;
-              // stretto (accanto a «Sul tuo PC»): il pulsante va sotto la frase
-              if (box.maxWidth < g.d(460)) {
-                return MsStack(
-                  gap: 10,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [text, pack],
-                );
-              }
-              return Row(
-                children: [
-                  Expanded(child: text),
-                  SizedBox(width: g.d(16)),
-                  pack,
-                ],
-              );
-            },
-          ),
-          if (address != null)
-            MsFacts([
-              MsFact(
-                s.address,
-                '',
-                child: MsRow(
-                  gap: 8,
-                  children: [
-                    MsText.mono(address, weight: 700),
-                    MsButton.icon(
-                      icon: const MsIcon(MsIcons.copy),
-                      size: MsButtonSize.sm,
-                      semanticLabel: s.copyAddressLabel(address),
-                      onPressed: () => copyText(context, address, s.copied),
-                    ),
-                  ],
-                ),
-              ),
-            ]),
-          if (view == LockView.play && addrs.fixed != null && addrs.direct != null)
-            MsText.rich(
-              [MsSpan('${s.fixedNote} '), MsSpan(addrs.direct!, strong: true), const MsSpan('.')],
-              kind: MsTextKind.small,
-              tone: MsTextTone.secondary,
-            ),
-        ],
-      ),
     );
   }
 }

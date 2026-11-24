@@ -18,6 +18,9 @@ dev_dependencies:
     sdk: flutter
 
 flutter:
+  # logo dell'app: le app lo installano come icona di sistema (es. Linux)
+  assets:
+    - assets/brand/minesync-256.png
   fonts:
     - family: AtkinsonHyperlegible
       fonts:

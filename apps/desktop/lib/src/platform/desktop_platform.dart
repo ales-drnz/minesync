@@ -13,6 +13,7 @@ import 'autostart.dart';
 import 'desktop_notifications.dart';
 import 'desktop_tray.dart';
 import 'desktop_window.dart';
+import 'desktop_entry.dart';
 import 'platform.dart';
 import 'single_instance.dart';
 import 'tray_status.dart';
@@ -74,6 +75,8 @@ final class DesktopPlatform {
       autostart: SystemAutostart(command: launchCommand(env), env: env),
       updates: HubUpdateService(env: env, log: (s) => say('update: $s')),
     );
+    // voce del menu e icona nella barra delle applicazioni (Linux)
+    unawaited(installLinuxDesktopEntry(env, log: say));
     return DesktopPlatform._(
       services: services,
       window: w,
