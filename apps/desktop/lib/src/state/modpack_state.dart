@@ -289,12 +289,16 @@ final class ModpackController extends ChangeNotifier {
         );
       }
     }
-    final pack = Pack(
-      name: summary?.name,
-      mcVersion: mc,
-      loader: loader,
-      loaderVersion: loader == Loader.vanilla ? null : l!.loaderVersion,
-      mods: mods,
+    // le librerie che Modrinth dà solo client ma che una mod del server
+    // richiede restano sul server
+    final pack = withServerDependencies(
+      Pack(
+        name: summary?.name,
+        mcVersion: mc,
+        loader: loader,
+        loaderVersion: loader == Loader.vanilla ? null : l!.loaderVersion,
+        mods: mods,
+      ),
     );
     _base = _draft = pack;
     _baseIsNew = true;

@@ -193,4 +193,31 @@ void main() {
     expect(temurinUrl(21), 'https://adoptium.net/temurin/releases/?version=21');
     expect(temurinUrl(0), 'https://adoptium.net/');
   });
+
+  test('le librerie richieste da una mod del server restano sul server', () {
+    PackMod lib(String id, PackSide side, {List<String> requires = const []}) =>
+        manual('mods/$id.jar', side: side).copyWith(projectId: id, requires: requires);
+    final p = withServerDependencies(
+      fabricPack([
+        // mod del server che richiede una libreria data «solo client» da Modrinth
+        lib('cobblefurnies', PackSide.server, requires: ['athena']),
+        lib('athena', PackSide.client, requires: ['fusion']),
+        // richiesta solo indirettamente
+        lib('fusion', PackSide.client),
+        // solo client davvero: nessuna mod del server la chiede
+        lib('sodium', PackSide.client),
+        // richiesta solo da una mod spenta: resta com'è
+        lib('off', PackSide.server, requires: ['zoom']).copyWith(disabled: true),
+        lib('zoom', PackSide.client),
+      ]),
+    );
+    PackSide side(String id) => p.mods.firstWhere((m) => m.projectId == id).side;
+    expect(side('athena'), PackSide.both);
+    expect(side('fusion'), PackSide.both);
+    expect(side('sodium'), PackSide.client);
+    expect(side('zoom'), PackSide.client);
+    expect(side('cobblefurnies'), PackSide.server);
+    final same = fabricPack([lib('sodium', PackSide.client)]);
+    expect(identical(withServerDependencies(same), same), isTrue);
+  });
 }

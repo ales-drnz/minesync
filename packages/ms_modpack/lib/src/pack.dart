@@ -679,6 +679,34 @@ PackCheck checkPack(Pack pack, Iterable<LocalFile> files) {
   return PackCheck(missing: missing, mismatched: mismatched, untracked: untracked);
 }
 
+/// [p] con sul server anche le mod richieste (pure indirettamente) da una
+/// mod che sta sul server: passano da «solo giocatori» a entrambi i lati.
+/// Su Modrinth alcune librerie risultano solo client (es. athena-ctm,
+/// fusion) ma le mod del server non partono senza: toglierle dal server lo
+/// romperebbe.
+Pack withServerDependencies(Pack p) {
+  final byProject = {
+    for (final m in p.mods)
+      if (m.projectId != null) m.projectId!: m,
+  };
+  final needed = <String>{};
+  final todo = [
+    for (final m in p.mods)
+      if (m.side.onServer && !m.disabled) ...m.requires,
+  ];
+  while (todo.isNotEmpty) {
+    final id = todo.removeLast();
+    if (!needed.add(id)) continue;
+    todo.addAll(byProject[id]?.requires ?? const []);
+  }
+  final fix = [
+    for (final m in p.mods)
+      if (m.side == PackSide.client && needed.contains(m.projectId))
+        m.copyWith(side: PackSide.both),
+  ];
+  return fix.isEmpty ? p : p.withMods(fix);
+}
+
 /// Una voce `manual` per un jar non riconosciuto: hash dal file, lato scelto
 /// dall'admin (di default solo server, il caso più sicuro: un jar sul
 /// server non rompe i PC dei giocatori). Il file in `client-overrides/mods/`
