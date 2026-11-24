@@ -88,14 +88,8 @@ class _ModpackScreenState extends State<ModpackScreen> {
             // la barra delle modifiche resta sempre in basso, fuori dallo scorrimento
             if (bar)
               Padding(
-                padding: EdgeInsets.fromLTRB(g.d(32), g.d(8), g.d(32), g.d(16)),
-                child: Align(
-                  alignment: Alignment.topLeft,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: g.d(MsSize.maxWidth)),
-                    child: PendingBar(space: sp, mp: mp),
-                  ),
-                ),
+                padding: EdgeInsets.fromLTRB(g.d(24), g.d(8), g.d(24), g.d(16)),
+                child: PendingBar(space: sp, mp: mp),
               ),
           ],
         );

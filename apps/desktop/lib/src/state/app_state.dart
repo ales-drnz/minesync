@@ -249,6 +249,8 @@ final class AppState extends ChangeNotifier {
     } else {
       config.prefs[key] = value;
     }
+    // l'interfaccia cambia subito (es. «Avviso attivo»), il file si scrive dopo
+    _notify();
     await _save();
   }
 

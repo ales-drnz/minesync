@@ -128,7 +128,8 @@ class _MsSliderState extends State<MsSlider> {
                 width: wDesign,
                 height: 44,
                 repaintKey: (_t, enabled, focus, c.accent),
-                painter: (p, w, h) => _paint(p, w, c, enabled ? _t : 0, focus),
+                // spenta resta al suo valore, in grigio: dice quanto varrebbe
+                painter: (p, w, h) => _paint(p, w, c, _t, focus, enabled),
               ),
             );
           },
@@ -138,7 +139,7 @@ class _MsSliderState extends State<MsSlider> {
   }
 }
 
-void _paint(PixelCanvas p, double w, MsColors c, double t, bool focus) {
+void _paint(PixelCanvas p, double w, MsColors c, double t, bool focus, bool enabled) {
   // binario alto 12 al centro, con contorno esterno: lo si tiene dentro
   // il box (2 px di margine ai lati).
   const ty = 16.0;
@@ -148,8 +149,10 @@ void _paint(PixelCanvas p, double w, MsColors c, double t, bool focus) {
   p.rect(tx, ty, tw, 12, c.inset);
   final fill = ((tw * t) / 2).round() * 2.0;
   for (var x = 0.0; x < fill; x += 8) {
-    p.rect(tx + x, ty, (fill - x).clamp(0, 6), 12, c.accent);
-    if (fill - x > 6) p.rect(tx + x + 6, ty, (fill - x - 6).clamp(0, 2), 12, c.accentLo);
+    p.rect(tx + x, ty, (fill - x).clamp(0, 6), 12, enabled ? c.accent : c.text3);
+    if (fill - x > 6) {
+      p.rect(tx + x + 6, ty, (fill - x - 6).clamp(0, 2), 12, enabled ? c.accentLo : c.pxShadow);
+    }
   }
   // rilievo interno sopra al riempimento (box-shadow inset)
   p.rect(tx, ty + 10, tw, 2, c.pxLight);

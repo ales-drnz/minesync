@@ -16,7 +16,14 @@ const abissoDarkTheme = MsThemeData(palette: MsPalette.abisso);
 /// Colori composti con [msBlend] che i controlli disegnano pieni.
 List<Color> blendedColors(MsColors c) {
   Color b(Color fg, double a, Color bg) => msBlend(fg, a, bg);
+  // pulsante giallo (MsButtonVariant.warn): sfumature di --ms-warn
+  final warnHover = b(const Color(0xFFFFFFFF), .12, c.warn);
   return [
+    warnHover,
+    b(const Color(0xFFFFFFFF), .3, c.warn),
+    b(const Color(0xFF000000), .3, c.warn),
+    for (final fg in [c.onWarn, c.text3])
+      for (final bg in [c.warn, warnHover]) b(fg, .35, bg),
     // frangia del GIOCA, normale/hover/premuto
     for (final face in [c.accent, c.accentHover])
       for (final a in [.9, .5]) b(c.accentHi, a, face),

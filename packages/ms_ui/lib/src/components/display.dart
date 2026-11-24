@@ -10,5 +10,6 @@ export 'display/layout.dart';
 export 'display/list.dart';
 export 'display/panel.dart';
 export 'display/progress.dart';
+export 'display/setting_row.dart';
 export 'display/text.dart';
 export 'display/texture.dart';

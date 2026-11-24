@@ -77,17 +77,14 @@ class _ServerScreenState extends State<ServerScreen> {
               LockView.stale => _StalePanel(space: sp),
               LockView.mine => _MinePanel(space: sp),
             },
+            if (view == LockView.stale && sp.head != null && sp.lock?.memberId != app.me?.id)
+              _WorldWhere(space: sp),
             if (_visible(ss.outcome)) _Outcome(state: ss),
             if (ss.transfer != null) _TransferPanel(space: sp, state: ss),
-            // affiancati quando c'è spazio: «Per entrare» è corto, a tutta
-            // larghezza lascerebbe mezza riga vuota
-            Columns(
-              minWidth: 420,
-              children: [
-                (2, _JoinPanel(space: sp, view: view)),
-                (3, _PcPanel(space: sp, state: ss)),
-              ],
-            ),
+            _PcPanel(space: sp, state: ss),
+            // sotto, a tutta larghezza su una riga: non dipende dall'altezza
+            // di «Sul tuo PC»
+            _JoinPanel(space: sp, view: view),
           ],
         );
       },
@@ -241,14 +238,20 @@ class _PlayFrame extends StatelessWidget {
             );
             final actions = MsStack(gap: 10, children: side);
             if (box.maxWidth < g.d(300 + 24 + 320)) {
-              return MsStack(gap: 20, children: [text, actions]);
+              return MsStack(gap: 20, children: [text, if (side.isNotEmpty) actions]);
             }
-            return Row(
-              children: [
-                Expanded(child: text),
-                SizedBox(width: g.d(24)),
-                SizedBox(width: g.d(320), child: actions),
-              ],
+            // alto sempre uguale: pulsante grande (84 con bordo e ombra) più
+            // la riga sotto (10 + 44), anche quando la riga o il pulsante non
+            // ci sono. Cambiando stato il contenuto sotto non salta
+            return ConstrainedBox(
+              constraints: BoxConstraints(minHeight: g.d(138)),
+              child: Row(
+                children: [
+                  Expanded(child: text),
+                  SizedBox(width: g.d(24)),
+                  SizedBox(width: g.d(320), child: actions),
+                ],
+              ),
             );
           },
         ),
@@ -310,59 +313,24 @@ class _OtherPanel extends StatelessWidget {
     final strings = context.s;
     final s = strings.server;
     final l = space.lock!;
-    final addrs = joinAddresses(space);
-    final address = addrs.fixed ?? addrs.direct;
     final since = strings.fmt.duration(app.now().difference(app.localTime(l.since)));
-    final g = PixelScope.of(context);
+    final notify = app.notifyWhenFree(space.id);
+    // come gli altri stati: titolo e testo, un pulsante e una riga sotto;
+    // l'indirizzo per entrare sta in «Per entrare»
     return _PlayFrame(
       label: s.playingTitle(l.name),
       main: [
         MsRow(gap: 12, children: [MsAvatar(l.name), MsText.h2(s.playingTitle(l.name))]),
         MsText(s.playingText(since, l.info.players.length), tone: MsTextTone.secondary),
-        if (address != null)
-          MsSlot(
-            padding: EdgeInsets.fromLTRB(g.d(14), g.d(6), g.d(6), g.d(6)),
-            child: Row(
-              children: [
-                Expanded(child: MsText.mono(address, weight: 700)),
-                MsTooltip(
-                  message: s.copyTip,
-                  child: MsButton(
-                    label: s.copy,
-                    size: MsButtonSize.sm,
-                    icon: const MsIcon(MsIcons.copy),
-                    semanticLabel: s.copyAddressLabel(address),
-                    onPressed: () => copyText(context, address, s.copied),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        if (addrs.fixed != null && addrs.direct != null)
-          MsText.rich(
-            [MsSpan('${s.fixedNote} '), MsSpan(addrs.direct!, strong: true), const MsSpan('.')],
-            kind: MsTextKind.small,
-            tone: MsTextTone.secondary,
-          )
-        else
-          MsText.small(
-            address == null ? s.noAddress : s.hostOn(l.name),
-            tone: MsTextTone.secondary,
-          ),
       ],
       side: [
-        MsButton.play(
-          label: s.play,
-          icon: const MsIcon(MsIcons.play),
+        MsButton(
+          label: notify ? s.notifyOn : s.notifyMe,
+          size: MsButtonSize.lg,
+          variant: notify ? MsButtonVariant.secondary : MsButtonVariant.primary,
+          icon: MsIcon(notify ? MsIcons.check : MsIcons.bell),
           block: true,
-          onPressed: null,
-        ),
-        MsText.small(s.hostLater(l.name), tone: MsTextTone.secondary),
-        MsSwitch(
-          value: app.notifyWhenFree(space.id),
-          label: s.notifyMe,
-          description: s.notifyText,
-          onChanged: (on) => app.setNotifyWhenFree(space.id, on),
+          onPressed: () => app.setNotifyWhenFree(space.id, !notify),
         ),
         if (app.me?.admin ?? false)
           MsButton(
@@ -370,8 +338,11 @@ class _OtherPanel extends StatelessWidget {
             variant: MsButtonVariant.ghost,
             size: MsButtonSize.sm,
             icon: const MsIcon(MsIcons.unlock),
+            block: true,
             onPressed: () => showForceDialog(context, space.id),
-          ),
+          )
+        else
+          MsText.small(s.hostLater(l.name), tone: MsTextTone.secondary, align: TextAlign.center),
       ],
     );
   }
@@ -390,7 +361,6 @@ class _StalePanel extends StatelessWidget {
     final l = space.lock!;
     final now = app.now();
     final beat = app.localTime(l.lastBeat);
-    final head = space.head;
     // la sessione rimasta appesa è la propria (MineSync chiuso mentre si
     // ospitava): si riprende senza le conferme del forzare un altro
     if (app.me != null && l.memberId == app.me!.id) {
@@ -401,9 +371,11 @@ class _StalePanel extends StatelessWidget {
           MsText(s.staleMineText, tone: MsTextTone.secondary),
         ],
         side: [
+          // giallo: riprende una sessione interrotta, non è un Gioca normale
           MsButton.play(
             label: s.resume,
             icon: const MsIcon(MsIcons.play),
+            variant: MsButtonVariant.warn,
             block: true,
             onPressed: app.connection == Connection.online
                 ? () => startPlay(app, space.id, force: true)
@@ -412,18 +384,13 @@ class _StalePanel extends StatelessWidget {
         ],
       );
     }
+    // titolo, testo e pulsanti come negli altri stati; cosa è al sicuro e
+    // cosa no sta nel pannello «Dove si trova il mondo» sotto
     return _PlayFrame(
       label: s.staleTitle(l.name),
       main: [
         MsText.h2(s.staleTitle(l.name)),
         MsText(s.staleText(f.clock(beat), f.ago(beat, now)), tone: MsTextTone.secondary),
-        if (head != null) ...[
-          MsFacts([
-            MsFact(s.safeOnHub, s.safeValue(head.n, head.author, f.clock(app.localTime(head.ts)))),
-            MsFact(s.maybeOnly(l.name), s.maybeValue(f.clock(app.localTime(head.ts)))),
-          ]),
-          MsText.small(s.staleAdvice(l.name, head.n), tone: MsTextTone.secondary),
-        ],
       ],
       side: [
         MsButton(
@@ -436,9 +403,10 @@ class _StalePanel extends StatelessWidget {
               ? () => showForceDialog(context, space.id)
               : null,
         ),
-        MsText.small(s.confirmTwice, tone: MsTextTone.secondary, align: TextAlign.center),
         MsButton(
           label: s.wait(l.name),
+          variant: MsButtonVariant.ghost,
+          size: MsButtonSize.sm,
           icon: const MsIcon(MsIcons.clock),
           block: true,
           onPressed: () async {
@@ -447,6 +415,36 @@ class _StalePanel extends StatelessWidget {
           },
         ),
       ],
+    );
+  }
+}
+
+/// Sotto il pannello di un server che non risponde: cosa c'è sull'hub e cosa
+/// forse solo sul PC di chi ospitava.
+class _WorldWhere extends StatelessWidget {
+  const _WorldWhere({required this.space});
+  final SpaceSummary space;
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppStateScope.of(context);
+    final strings = context.s;
+    final s = strings.server;
+    final f = strings.fmt;
+    final l = space.lock!;
+    final head = space.head!;
+    return MsPanel(
+      title: s.worldWhere,
+      child: MsStack(
+        gap: 8,
+        children: [
+          MsFacts([
+            MsFact(s.safeOnHub, s.safeValue(head.n, head.author, f.clock(app.localTime(head.ts)))),
+            MsFact(s.maybeOnly(l.name), s.maybeValue(f.clock(app.localTime(head.ts)))),
+          ]),
+          MsText.small(s.staleAdvice(l.name, head.n), tone: MsTextTone.secondary),
+        ],
+      ),
     );
   }
 }
@@ -616,7 +614,10 @@ class _JoinPanel extends StatelessWidget {
     final w = space.world;
     final loader = w?.loader?.name;
     final modded = loader != null && loader != 'vanilla';
-    final fixed = joinAddresses(space).fixed;
+    final addrs = joinAddresses(space);
+    // l'indirizzo fisso c'è sempre; mentre qualcuno gioca, senza DNS, si
+    // mostra l'IP diretto di chi ospita
+    final address = addrs.fixed ?? (view == LockView.play ? addrs.direct : null);
     return MsPanel(
       title: s.joinTitle,
       child: MsStack(
@@ -658,7 +659,7 @@ class _JoinPanel extends StatelessWidget {
               );
             },
           ),
-          if (fixed != null && view != LockView.play)
+          if (address != null)
             MsFacts([
               MsFact(
                 s.address,
@@ -666,17 +667,23 @@ class _JoinPanel extends StatelessWidget {
                 child: MsRow(
                   gap: 8,
                   children: [
-                    MsText.mono(fixed, weight: 700),
+                    MsText.mono(address, weight: 700),
                     MsButton.icon(
                       icon: const MsIcon(MsIcons.copy),
                       size: MsButtonSize.sm,
-                      semanticLabel: s.copyAddressLabel(fixed),
-                      onPressed: () => copyText(context, fixed, s.copied),
+                      semanticLabel: s.copyAddressLabel(address),
+                      onPressed: () => copyText(context, address, s.copied),
                     ),
                   ],
                 ),
               ),
             ]),
+          if (view == LockView.play && addrs.fixed != null && addrs.direct != null)
+            MsText.rich(
+              [MsSpan('${s.fixedNote} '), MsSpan(addrs.direct!, strong: true), const MsSpan('.')],
+              kind: MsTextKind.small,
+              tone: MsTextTone.secondary,
+            ),
         ],
       ),
     );
@@ -728,37 +735,84 @@ class _PcPanel extends StatelessWidget {
       child: MsStack(
         gap: 12,
         children: [
-          // cartella e Java affiancate quando c'è spazio, ognuna con il suo
-          // «Cambia…»
-          AutoGrid(
-            minWidth: 320,
-            minColumns: 2,
-            gap: 32,
+          // righe come nelle impostazioni: icona, titolo con valore e
+          // spiegazione sotto, controllo a destra
+          MsSettingList(
             children: [
-              _PcRow(
-                label: s.folder,
-                value: MsText.mono(app.displayPath(ss.folder ?? ss.suggestedFolder), weight: 500),
-                note: ss.linked
+              MsSettingRow(
+                icon: const MsIcon(MsIcons.folder),
+                title: s.folder,
+                description: ss.linked
                     ? (base == null && head == 0
                           ? s.copyNever
                           : (base ?? 0) < head
                           ? s.copyBehind(base ?? 0, head)
                           : null)
                     : s.folderLater,
-                action: change(s.folder, () => showServerSettingsDialog(context, ss)),
+                value: MsText.mono(
+                  app.displayPath(ss.folder ?? ss.suggestedFolder),
+                  weight: 500,
+                  maxLines: 1,
+                ),
+                control: change(s.folder, () => showServerSettingsDialog(context, ss)),
               ),
-              if (mc)
-                _PcRow(
-                  label: s.java,
+              if (mc) ...[
+                MsSettingRow(
+                  icon: const MsIcon(MsIcons.java),
+                  title: s.java,
+                  description: prefs.javaPath == null ? t.javaAuto : null,
                   value: MsText(
                     java == null
                         ? (ss.javaLoading || ss.javas == null ? s.javaSearching : s.javaNone)
                         : s.javaOption(java.major),
-                    weight: 700,
+                    maxLines: 1,
                   ),
-                  note: prefs.javaPath == null ? t.javaAuto : null,
-                  action: change(s.java, () => showJavaDialog(context, ss)),
+                  control: change(s.java, () => showJavaDialog(context, ss)),
                 ),
+                // una riga sola: l'interruttore accende la barra accanto (che
+                // resta visibile, spenta, al suo valore)
+                MsSettingRow(
+                  icon: const MsIcon(MsIcons.chart),
+                  title: t.memoryMax,
+                  description: t.memoryHint,
+                  value: MsText(t.gb(xmxGb), tabular: true, maxLines: 1),
+                  control: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: PixelScope.of(context).d(220),
+                        child: MsSlider(
+                          value: xmxGb.toDouble(),
+                          min: 2,
+                          max: 16,
+                          step: 1,
+                          semanticLabel: t.memoryMax,
+                          semanticFormatter: (v) => t.gb(v.round()),
+                          onChanged: prefs.xmxMiB == null
+                              ? null
+                              : (v) => app.setServerPref(id, 'xmx', v.round() * 1024),
+                        ),
+                      ),
+                      SizedBox(width: PixelScope.of(context).d(16)),
+                      MsSwitch(
+                        value: prefs.xmxMiB != null,
+                        semanticLabel: t.memorySet,
+                        onChanged: (v) => app.setServerPref(id, 'xmx', v ? xmxGb * 1024 : null),
+                      ),
+                    ],
+                  ),
+                ),
+                MsSettingRow(
+                  icon: const MsIcon(MsIcons.stop),
+                  title: t.autostop,
+                  description: t.autostopHint(hub.autostopMinutes),
+                  control: MsSwitch(
+                    value: prefs.autostop ?? hub.autostop,
+                    semanticLabel: t.autostop,
+                    onChanged: (v) => app.setServerPref(id, 'autostop', v),
+                  ),
+                ),
+              ],
             ],
           ),
           if (mc && l != null && !l.empty && l.launch == null)
@@ -783,90 +837,8 @@ class _PcPanel extends StatelessWidget {
               title: s.javaNoneTitle(ss.requiredJava),
               text: s.javaNoneText(ss.requiredJava),
             ),
-          if (mc) ...[
-            AutoGrid(
-              minWidth: 320,
-              minColumns: 2,
-              gap: 32,
-              children: [
-                MsSwitch(
-                  value: prefs.xmxMiB != null,
-                  label: t.memorySet,
-                  description: t.memoryHint,
-                  onChanged: (v) => app.setServerPref(id, 'xmx', v ? xmxGb * 1024 : null),
-                ),
-                MsSwitch(
-                  value: prefs.autostop ?? hub.autostop,
-                  label: t.autostop,
-                  description: t.autostopHint(hub.autostopMinutes),
-                  onChanged: (v) => app.setServerPref(id, 'autostop', v),
-                ),
-              ],
-            ),
-            if (prefs.xmxMiB != null)
-              MsStack(
-                gap: 4,
-                children: [
-                  MsProgressMeta(
-                    start: MsText.small(t.memoryMax),
-                    end: MsText.small(t.gb(xmxGb), weight: 700, tabular: true),
-                  ),
-                  MsSlider(
-                    value: xmxGb.toDouble(),
-                    min: 2,
-                    max: 16,
-                    step: 1,
-                    semanticLabel: t.memoryMax,
-                    semanticFormatter: (v) => t.gb(v.round()),
-                    onChanged: (v) => app.setServerPref(id, 'xmx', v.round() * 1024),
-                  ),
-                ],
-              ),
-          ],
         ],
       ),
-    );
-  }
-}
-
-/// Riga di "Sul tuo PC": etichetta, valore con la nota accanto (in grigio)
-/// e azione a destra, centrata sulle due righe.
-class _PcRow extends StatelessWidget {
-  const _PcRow({required this.label, required this.value, this.note, this.action});
-  final String label;
-  final Widget value;
-  final String? note;
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) {
-    final g = PixelScope.of(context);
-    // in alto: due righe affiancate (cartella e Java) partono alla stessa
-    // altezza anche con un numero di righe diverso
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: MsStack(
-            gap: 2,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              MsText.small(label, tone: MsTextTone.secondary),
-              if (note == null)
-                value
-              else
-                MsRow(
-                  gap: 8,
-                  children: [
-                    value,
-                    MsText.small(note!, tone: MsTextTone.secondary),
-                  ],
-                ),
-            ],
-          ),
-        ),
-        if (action != null) ...[SizedBox(width: g.d(12)), action!],
-      ],
     );
   }
 }

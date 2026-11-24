@@ -127,13 +127,17 @@ void main() {
   testWidgets('sul PC: memoria e spegnimento automatico di questo server', (t) async {
     final s = serverState();
     await pumpApp(t, s);
-    expect(find.byType(MsSlider), findsNothing);
-    Finder sw(String label) => find.byWidgetPredicate((w) => w is MsSwitch && w.label == label);
+    // la barra c'è sempre, spenta finché l'interruttore è spento: il
+    // pannello non cambia altezza
+    MsSlider slider() => t.widget<MsSlider>(find.byType(MsSlider));
+    expect(slider().onChanged, isNull);
+    Finder sw(String label) =>
+        find.byWidgetPredicate((w) => w is MsSwitch && w.semanticLabel == label);
     await t.ensureVisible(sw('Imposta la memoria manualmente'));
     await t.tap(sw('Imposta la memoria manualmente'));
     await t.pump();
     expect(ServerPrefs.fromPrefs(s.config.prefs, 'creativo').xmxMiB, 6144);
-    expect(find.byType(MsSlider), findsOneWidget);
+    expect(slider().onChanged, isNotNull);
     await t.ensureVisible(sw('Arresto automatico senza giocatori'));
     await t.pump();
     await t.tap(sw('Arresto automatico senza giocatori'));
@@ -201,9 +205,11 @@ void main() {
     expect(msText('zerotier.survival.internal'), findsOneWidget);
     expect(msTextContaining('In alternativa, l\'IP diretto 192.0.2.31:25565'), findsOneWidget);
     expect(msButton('Forza e gioca… (admin)'), findsOneWidget);
-    await t.tap(find.byType(MsSwitch).first);
+    // al posto del Gioca spento: «Avvisa quando è libero»
+    await t.tap(msButton('Avvisa quando è libero'));
     await t.pump();
     expect(s.notifyWhenFree('survival'), isTrue);
+    expect(msButton('Avviso attivo'), findsOneWidget);
 
     final m = serverState(route: 'survival', admin: false);
     await pumpApp(t, m);
@@ -263,7 +269,7 @@ void main() {
     final s = serverState(route: 'survival');
     await pumpApp(t, s);
     // la cartella proposta, usata dal primo Gioca; si cambia da «Cambia…»
-    expect(find.text('~/MineSync/survival'), findsOneWidget);
+    expect(msText('~/MineSync/survival'), findsOneWidget);
     expect(msText('Il server viene scaricato qui al primo avvio.'), findsOneWidget);
   });
 

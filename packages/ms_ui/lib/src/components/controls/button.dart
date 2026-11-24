@@ -21,6 +21,10 @@ enum MsButtonVariant {
   /// `--danger`: error block.
   danger,
 
+  /// Warning block (`--ms-warn`): an action that resumes or recovers
+  /// something, not a destructive one.
+  warn,
+
   /// `--ghost`: no block, outline on hover.
   ghost,
 }
@@ -93,8 +97,8 @@ class MsButton extends StatelessWidget {
     this.focusNode,
     this.autofocus = false,
     this.forcedStates,
-  }) : variant = MsButtonVariant.primary,
-       size = MsButtonSize.lg,
+    this.variant = MsButtonVariant.primary,
+  }) : size = MsButtonSize.lg,
        trailing = null,
        alignStart = false,
        _kind = _Kind.play;
@@ -322,6 +326,13 @@ class MsButton extends StatelessWidget {
   }
 
   _Palette _palette(MsColors c) => switch ((_kind, variant)) {
+    (_, MsButtonVariant.warn) => _Palette(
+      c.warn,
+      msBlend(const Color(0xFFFFFFFF), .12, c.warn),
+      msBlend(const Color(0xFFFFFFFF), .3, c.warn),
+      msBlend(const Color(0xFF000000), .3, c.warn),
+      c.onWarn,
+    ),
     (_Kind.play, _) || (_, MsButtonVariant.primary) => _Palette(
       c.accent,
       c.accentHover,

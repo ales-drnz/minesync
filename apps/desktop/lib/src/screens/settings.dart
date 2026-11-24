@@ -201,56 +201,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
       // larga come le altre pagine: in una finestra grande i controlli non
       // finiscono lontani dalle loro etichette
-      child: _MaxWidth(
-        child: LayoutBuilder(
-          builder: (context, box) {
-            final panels = visible.isEmpty
-                ? MsText(t.noMatch, tone: MsTextTone.secondary)
-                : MsStack(gap: 16, children: visible);
-            final title = MsStack(
-              gap: 4,
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final panels = visible.isEmpty
+              ? MsText(t.noMatch, tone: MsTextTone.secondary)
+              : MsStack(gap: 16, children: visible);
+          final title = MsStack(
+            gap: 4,
+            children: [
+              MsText(t.title, kind: MsTextKind.h2),
+              MsText(t.intro, tone: MsTextTone.secondary),
+            ],
+          );
+          // con l'interfaccia ingrandita in una finestra stretta l'indice
+          // sparisce e scorre tutto insieme
+          if (box.maxWidth < g.d(820) + g.d(64)) {
+            return SingleChildScrollView(
+              controller: _scroll,
+              padding: EdgeInsets.fromLTRB(g.d(24), g.d(20), g.d(24), g.d(24)),
+              child: MsStack(gap: 16, children: [title, search, panels]),
+            );
+          }
+          return Padding(
+            padding: EdgeInsets.fromLTRB(g.d(24), g.d(20), g.d(24), 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                MsText(t.title, kind: MsTextKind.h2),
-                MsText(t.intro, tone: MsTextTone.secondary),
-              ],
-            );
-            // con l'interfaccia ingrandita in una finestra stretta l'indice
-            // sparisce e scorre tutto insieme
-            if (box.maxWidth < g.d(820) + g.d(64)) {
-              return SingleChildScrollView(
-                controller: _scroll,
-                padding: EdgeInsets.fromLTRB(g.d(24), g.d(20), g.d(24), g.d(24)),
-                child: MsStack(gap: 16, children: [title, search, panels]),
-              );
-            }
-            return Padding(
-              padding: EdgeInsets.fromLTRB(g.d(24), g.d(20), g.d(24), 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  title,
-                  SizedBox(height: g.d(16)),
-                  Expanded(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        nav,
-                        SizedBox(width: g.d(16)),
-                        Expanded(
-                          child: SingleChildScrollView(
-                            controller: _scroll,
-                            padding: EdgeInsets.only(bottom: g.d(24)),
-                            child: panels,
-                          ),
+                title,
+                SizedBox(height: g.d(16)),
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      nav,
+                      SizedBox(width: g.d(16)),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          controller: _scroll,
+                          padding: EdgeInsets.only(bottom: g.d(24)),
+                          child: panels,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            );
-          },
-        ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -586,24 +584,5 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     ];
-  }
-}
-
-/// Contenuto allineato a sinistra e largo al più 1104 px: è un modulo, i
-/// controlli restano vicini alle loro etichette.
-class _MaxWidth extends StatelessWidget {
-  const _MaxWidth({required this.child});
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final g = PixelScope.of(context);
-    return Align(
-      alignment: Alignment.topLeft,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: g.d(1104 + 48)),
-        child: child,
-      ),
-    );
   }
 }

@@ -23,13 +23,8 @@ class ScreenBody extends StatelessWidget {
     final g = PixelScope.of(context);
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(g.d(24), g.d(20), g.d(24), g.d(24)),
-      child: Align(
-        alignment: Alignment.topLeft,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: g.d(MsSize.maxWidth)),
-          child: MsStack(gap: gap, children: children),
-        ),
-      ),
+      // tutta la larghezza della finestra: niente spazio vuoto a destra
+      child: MsStack(gap: gap, children: children),
     );
   }
 }

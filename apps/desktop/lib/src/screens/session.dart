@@ -259,15 +259,13 @@ class _SessionScreenState extends State<SessionScreen> {
             if (width < g.d(860) || !tall) {
               return SingleChildScrollView(
                 padding: pad,
-                child: _MaxWidth(
-                  child: MsStack(
-                    gap: 24,
-                    children: [
-                      ...head,
-                      side,
-                      SizedBox(height: g.d(480), child: _console(context, s)),
-                    ],
-                  ),
+                child: MsStack(
+                  gap: 24,
+                  children: [
+                    ...head,
+                    side,
+                    SizedBox(height: g.d(480), child: _console(context, s)),
+                  ],
                 ),
               );
             }
@@ -275,27 +273,25 @@ class _SessionScreenState extends State<SessionScreen> {
             // laterale che scorre da sola, console fino al fondo
             return Padding(
               padding: pad,
-              child: _MaxWidth(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    MsStack(gap: 24, children: head),
-                    SizedBox(height: g.d(24)),
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          SizedBox(
-                            width: g.d(360),
-                            child: SingleChildScrollView(child: side),
-                          ),
-                          SizedBox(width: g.d(24)),
-                          Expanded(child: _console(context, s)),
-                        ],
-                      ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  MsStack(gap: 24, children: head),
+                  SizedBox(height: g.d(24)),
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(
+                          width: g.d(360),
+                          child: SingleChildScrollView(child: side),
+                        ),
+                        SizedBox(width: g.d(24)),
+                        Expanded(child: _console(context, s)),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             );
           },
@@ -1074,20 +1070,4 @@ class _PortCheckRowState extends State<_PortCheckRow> {
       ],
     );
   }
-}
-
-/// Larga al più come le altre pagine ([MsSize.maxWidth]), allineata a
-/// sinistra: passando da Panoramica a sessione la pagina non cambia misura.
-class _MaxWidth extends StatelessWidget {
-  const _MaxWidth({required this.child});
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => Align(
-    alignment: Alignment.topLeft,
-    child: ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: PixelScope.of(context).d(MsSize.maxWidth)),
-      child: child,
-    ),
-  );
 }

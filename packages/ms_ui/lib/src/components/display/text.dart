@@ -103,6 +103,7 @@ class MsText extends StatelessWidget {
     this.maxLines,
     this.align = TextAlign.start,
     this.semanticsLabel,
+    this.lineHeight,
   }) : spans = null,
        strongWeight = 700,
        strongColor = null;
@@ -120,6 +121,7 @@ class MsText extends StatelessWidget {
     this.maxLines,
     this.align = TextAlign.start,
     this.semanticsLabel,
+    this.lineHeight,
     this.strongWeight = 700,
     this.strongColor,
   }) : text = '';
@@ -133,6 +135,7 @@ class MsText extends StatelessWidget {
     this.maxLines,
     this.align = TextAlign.start,
     this.semanticsLabel,
+    this.lineHeight,
   }) : kind = MsTextKind.display,
        tabular = false,
        spans = null,
@@ -148,6 +151,7 @@ class MsText extends StatelessWidget {
     this.maxLines,
     this.align = TextAlign.start,
     this.semanticsLabel,
+    this.lineHeight,
   }) : kind = MsTextKind.h1,
        tabular = false,
        spans = null,
@@ -163,6 +167,7 @@ class MsText extends StatelessWidget {
     this.maxLines,
     this.align = TextAlign.start,
     this.semanticsLabel,
+    this.lineHeight,
   }) : kind = MsTextKind.h2,
        tabular = false,
        spans = null,
@@ -178,6 +183,7 @@ class MsText extends StatelessWidget {
     this.maxLines,
     this.align = TextAlign.start,
     this.semanticsLabel,
+    this.lineHeight,
   }) : kind = MsTextKind.h3,
        tabular = false,
        spans = null,
@@ -194,6 +200,7 @@ class MsText extends StatelessWidget {
     this.maxLines,
     this.align = TextAlign.start,
     this.semanticsLabel,
+    this.lineHeight,
   }) : kind = MsTextKind.small,
        spans = null,
        strongWeight = 700,
@@ -207,6 +214,7 @@ class MsText extends StatelessWidget {
     this.color,
     this.weight,
     this.semanticsLabel,
+    this.lineHeight,
   }) : kind = MsTextKind.label,
        tabular = false,
        maxLines = 1,
@@ -224,11 +232,16 @@ class MsText extends StatelessWidget {
     this.maxLines,
     this.align = TextAlign.start,
     this.semanticsLabel,
+    this.lineHeight,
   }) : kind = MsTextKind.mono,
        tabular = false,
        spans = null,
        strongWeight = 700,
        strongColor = null;
+
+  /// Interlinea in px di design al posto di quella del ruolo (righe
+  /// compatte, es. titolo e descrizione di una riga di impostazione).
+  final double? lineHeight;
 
   final String text;
   final List<MsSpan>? spans;
@@ -251,7 +264,8 @@ class MsText extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = MsTheme.colorsOf(context);
     final fg = color ?? msToneColor(c, tone);
-    final style = msTextStyle(context, kind, fg, weight: weight);
+    final base = msTextStyle(context, kind, fg, weight: weight);
+    final style = lineHeight == null ? base : base.copyWith(lineHeight: lineHeight);
     final g = PixelScope.of(context);
     final rich = spans;
     // le etichette hanno l'iniziale maiuscola (le stringhe arrivano come

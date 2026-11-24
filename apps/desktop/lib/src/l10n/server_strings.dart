@@ -58,6 +58,8 @@ abstract final class ServerStrings {
   String hostLater(String who);
   String get notifyMe;
   String get notifyText;
+  String get notifyOn;
+  String get worldWhere;
   String get forceAdmin;
   String get mineTitle;
   String get mineText;
@@ -259,7 +261,7 @@ final class _It implements ServerStrings {
   @override
   String playingText(String since, int online) =>
       'Da $since, $online online. Per entrare: Minecraft › Multigiocatore › Aggiungi server, '
-      'poi incolla questo indirizzo.';
+      'con l\'indirizzo che trovi qui sotto.';
   @override
   String copyAddressLabel(String address) => 'Copia indirizzo $address';
   @override
@@ -277,6 +279,10 @@ final class _It implements ServerStrings {
   String get notifyMe => 'Avvisa quando è libero';
   @override
   String get notifyText => 'notifica sul desktop';
+  @override
+  String get notifyOn => 'Avviso attivo';
+  @override
+  String get worldWhere => 'Dove si trova il mondo';
   @override
   String get forceAdmin => 'Forza e gioca… (admin)';
   @override
@@ -646,8 +652,8 @@ final class _En implements ServerStrings {
   String playingTitle(String who) => '$who is playing';
   @override
   String playingText(String since, int online) =>
-      'For $since, $online online. To join: Minecraft › Multiplayer › Add Server, then paste '
-      'this address.';
+      'For $since, $online online. To join: Minecraft › Multiplayer › Add Server, with the '
+      'address below.';
   @override
   String copyAddressLabel(String address) => 'Copy address $address';
   @override
@@ -664,6 +670,10 @@ final class _En implements ServerStrings {
   String get notifyMe => 'Notify when free';
   @override
   String get notifyText => 'desktop notification';
+  @override
+  String get notifyOn => 'Notification on';
+  @override
+  String get worldWhere => 'Where the world is';
   @override
   String get forceAdmin => 'Force and play… (admin)';
   @override
