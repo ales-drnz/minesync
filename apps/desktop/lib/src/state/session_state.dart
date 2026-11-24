@@ -568,9 +568,10 @@ final class SessionController extends ChangeNotifier {
   Future<void> start({bool force = false}) async {
     _startedAt ??= _now();
     if (force) {
+      // si libera il lock senza prenderlo: prenderlo per gioco e rilasciarlo
+      // lascerebbe nella Storia una partita di 0 s
       try {
-        final g = await client.acquireLock(space, _lockInfo('play'), force: true);
-        await client.releaseLock(space, g.token);
+        await client.forceReleaseLock(space);
       } on Object catch (e) {
         _fail(e);
         return;

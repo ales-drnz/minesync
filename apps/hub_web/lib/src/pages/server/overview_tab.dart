@@ -214,7 +214,7 @@ class _LockPanelState extends State<LockPanel> {
             title: v.staleTitle(l.name),
             text: v.staleText(
               f.gen(sp.headN),
-              sp.head == null ? null : f.clock(app.localTime(sp.head!.ts)),
+              sp.head == null ? null : f.clockOn(app.localTime(sp.head!.ts), now),
               l.name,
             ),
           ),

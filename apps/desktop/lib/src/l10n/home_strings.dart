@@ -243,7 +243,16 @@ final class _It implements HomeStrings {
     final sp = space ?? '?';
     return switch (type) {
       'push' => [(a, true), (' ha salvato ', false), (sp, true), (_sizeOf(data, f), false)],
-      EventType.lock => [(a, true), (' gioca su ', false), (sp, true)],
+      EventType.lock => switch (data['tookOver']) {
+        final String was when was == a => [(a, true), (' riprende ', false), (sp, true)],
+        final String was => [
+          (a, true),
+          (' gioca su ', false),
+          (sp, true),
+          (' (era di $was)', false),
+        ],
+        _ => [(a, true), (' gioca su ', false), (sp, true)],
+      },
       EventType.unlock => [
         (a, true),
         (' ha chiuso ', false),
@@ -531,7 +540,16 @@ final class _En implements HomeStrings {
     final sp = space ?? '?';
     return switch (type) {
       'push' => [(a, true), (' saved ', false), (sp, true), (_sizeOf(data, f), false)],
-      EventType.lock => [(a, true), (' is playing on ', false), (sp, true)],
+      EventType.lock => switch (data['tookOver']) {
+        final String was when was == a => [(a, true), (' resumes ', false), (sp, true)],
+        final String was => [
+          (a, true),
+          (' is playing on ', false),
+          (sp, true),
+          (' (was $was\'s)', false),
+        ],
+        _ => [(a, true), (' is playing on ', false), (sp, true)],
+      },
       EventType.unlock => [
         (a, true),
         (' closed ', false),

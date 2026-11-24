@@ -166,7 +166,8 @@ Future<bool> showForceDialog(
   final friends = lock.info.players.where((p) => p != lock.name).length;
   final at = now ?? DateTime.now();
   final headAt = head == null ? null : DateTime.fromMillisecondsSinceEpoch(head.ts);
-  final ago = headAt == null ? null : ss.ago(at.difference(headAt));
+  final f = context.s.fmt;
+  final ago = headAt == null || f.otherDay(headAt, at) ? null : ss.ago(at.difference(headAt));
   return showMsTwoStepConfirm(
     context: context,
     secondCancelGoesBack: false,
@@ -191,8 +192,7 @@ Future<bool> showForceDialog(
             ],
           ),
           MsFacts([
-            if (headAt != null && ago != null)
-              MsFact(t.lastSafe, t.lastSafeValue(ago, hhmm(headAt))),
+            if (headAt != null) MsFact(t.lastSafe, t.lastSafeValue(ago, f.clockOn(headAt, at))),
             MsFact(t.risk, t.riskValue(lock.name)),
           ]),
           if (!lock.stale) _p(t.forceHint, tone: MsTextTone.secondary, small: true),

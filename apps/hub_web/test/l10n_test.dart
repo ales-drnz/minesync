@@ -36,6 +36,25 @@ void main() {
         expect(s.events.text(unknown, null, s.fmt).single.$1, 'future.type');
       });
 
+      test('lock preso a chi non rispondeva: chi lo teneva, non «true»', () {
+        String text(Map<String, Object?> data) => s.events
+            .text(
+              HubEvent(seq: 1, ts: 0, type: EventType.lock, actor: 'alice', data: data),
+              'Survival',
+              s.fmt,
+            )
+            .map((p) => p.$1)
+            .join();
+        final open = text(const {'action': 'play'});
+        expect(
+          text(const {'action': 'play', 'tookOver': 'carol'}),
+          allOf(startsWith(open), contains('carol')),
+        );
+        final resumed = text(const {'action': 'play', 'tookOver': 'alice'});
+        expect(resumed, isNot(open));
+        expect(resumed, isNot(contains('carol')));
+      });
+
       test('ogni codice di errore ha un testo', () {
         final seen = <String>{};
         for (final c in ErrorCode.values) {
@@ -75,6 +94,12 @@ void main() {
     expect(en.ago(DateTime.utc(2026, 11, 22, 17, 56), testNow), '4 min ago');
     expect(it.when(DateTime.utc(2026, 11, 21, 22, 47), testNow), 'ieri 22:47');
     expect(it.eventTime(DateTime.utc(2026, 11, 22, 17, 52), testNow), '17:52');
+    expect(it.clockOn(DateTime.utc(2026, 11, 22, 9, 5), testNow), '09:05');
+    expect(it.clockOn(DateTime.utc(2026, 11, 21, 23, 10), testNow), '23:10 di ieri');
+    expect(it.clockOn(DateTime.utc(2026, 11, 17, 8), testNow), '08:00 di martedì');
+    expect(it.clockOn(DateTime.utc(2026, 11, 8, 8), testNow), "08:00 dell'8 nov");
+    expect(en.clockOn(DateTime.utc(2026, 11, 21, 23, 10), testNow), '23:10 yesterday');
+    expect(en.clockOn(DateTime.utc(2026, 11, 3, 8), testNow), '08:00 on 3 Nov');
     expect(it.names(['bob', 'carol', 'alice']), 'bob, carol e alice');
     expect(en.names(['bob', 'carol']), 'bob and carol');
     expect(it.percentSpaced(.91), '91 %');

@@ -109,6 +109,11 @@ final class HubClient {
   Future<void> releaseLock(String id, String token) =>
       _json('DELETE', 'spaces/${_seg(id)}/lock', body: {'token': token});
 
+  /// Libera il lock di un altro senza prenderlo: chiunque se non risponde,
+  /// solo un admin se è vivo. Sull'hub resta un solo evento `force`.
+  Future<void> forceReleaseLock(String id) =>
+      _json('DELETE', 'spaces/${_seg(id)}/lock', body: {'force': true});
+
   /// Inizio di un push. Il corpo (che contiene il manifest) va compresso.
   Future<PushStarted> beginPush(String id, PushBegin push) async => PushStarted.fromJson(
     await _json('POST', 'spaces/${_seg(id)}/pushes', body: push.toJson(), gzipBody: true),

@@ -105,6 +105,30 @@ void main() {
     }
   }
 
+  test('forza e gioca: il lock dell\'altro si libera senza una partita finta', () async {
+    final f = dir('pc');
+    put(f, 'server.jar', 'jar');
+    put(f, 'world/level.dat', 'world 0');
+    put(f, 'eula.txt', 'eula=true');
+    // un'altra sessione tiene il server
+    await client.acquireLock(space, const LockInfo(client: 'test', action: 'play'));
+    final before = (await client.events()).length;
+    final c = controller(f);
+    unawaited(c.start(force: true));
+    await until(() => c.phase == SessionPhase.running);
+    final evs = (await client.events()).skip(before).toList();
+    // poi il primo caricamento della cartella nuova
+    expect([for (final e in evs.where((e) => e.type != EventType.port)) e.type].take(2), [
+      EventType.force,
+      EventType.lock,
+    ]);
+    expect(evs.first.data['from'], 'alice');
+    expect(evs.first.data['released'], true);
+    expect(evs.where((e) => e.type == EventType.unlock), isEmpty, reason: 'nessuna partita di 0 s');
+    await c.send('stop');
+    await c.done;
+  });
+
   test('sessione completa: EULA chiesta, avvio, giocatori, salva ora, arresto pulito', () async {
     final f = dir('pc');
     put(f, 'server.jar', 'jar');

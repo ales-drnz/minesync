@@ -64,7 +64,9 @@ abstract final class ServerStrings {
   String get staleMineTitle;
   String get staleMineText;
   String get resume;
-  String staleText(String time, String ago);
+
+  /// [ago] null: il segnale è di un altro giorno, [time] lo dice già.
+  String staleText(String time, String? ago);
   String get safeOnHub;
   String safeValue(int n, String who, String time);
   String maybeOnly(String who);
@@ -288,8 +290,8 @@ final class _It implements ServerStrings {
   @override
   String get resume => 'Riprendi';
   @override
-  String staleText(String time, String ago) =>
-      'Nessun segnale dalle $time ($ago). Possibile chiusura anomala o perdita di rete.';
+  String staleText(String time, String? ago) =>
+      'Nessun segnale dalle $time${ago == null ? '' : ' ($ago)'}. Possibile chiusura anomala o perdita di rete.';
   @override
   String get safeOnHub => 'Al sicuro sull\'hub';
   @override
@@ -664,8 +666,8 @@ final class _En implements ServerStrings {
   @override
   String get resume => 'Resume';
   @override
-  String staleText(String time, String ago) =>
-      'No signal since $time ($ago). The app may have closed unexpectedly or lost the network.';
+  String staleText(String time, String? ago) =>
+      'No signal since $time${ago == null ? '' : ' ($ago)'}. The app may have closed unexpectedly or lost the network.';
   @override
   String get safeOnHub => 'Safe on the hub';
   @override

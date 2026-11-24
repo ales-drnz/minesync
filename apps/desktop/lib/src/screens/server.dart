@@ -403,7 +403,7 @@ class _StalePanel extends StatelessWidget {
     return _PlayFrame(
       label: s.staleTitle(l.name),
       title: MsText.h3(s.staleTitle(l.name)),
-      text: s.staleText(f.clock(beat), f.ago(beat, now)),
+      text: s.staleText(f.clockOn(beat, now), f.otherDay(beat, now) ? null : f.ago(beat, now)),
       secondary: MsButton(
         label: s.wait(l.name),
         variant: MsButtonVariant.ghost,
@@ -440,14 +440,15 @@ class _WorldWhere extends StatelessWidget {
     final f = strings.fmt;
     final l = space.lock!;
     final head = space.head!;
+    final saved = f.clockOn(app.localTime(head.ts), app.now());
     return MsPanel(
       title: s.worldWhere,
       child: MsStack(
         gap: 8,
         children: [
           MsFacts([
-            MsFact(s.safeOnHub, s.safeValue(head.n, head.author, f.clock(app.localTime(head.ts)))),
-            MsFact(s.maybeOnly(l.name), s.maybeValue(f.clock(app.localTime(head.ts)))),
+            MsFact(s.safeOnHub, s.safeValue(head.n, head.author, saved)),
+            MsFact(s.maybeOnly(l.name), s.maybeValue(saved)),
           ]),
           MsText.small(s.staleAdvice(l.name, head.n), tone: MsTextTone.secondary),
         ],

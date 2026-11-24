@@ -3,6 +3,8 @@
 // forzare.
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:minesync_desktop/src/l10n/format_strings.dart';
+import 'package:minesync_desktop/src/l10n/l10n.dart' show Lang;
 import 'package:minesync_desktop/src/state/app_state.dart';
 import 'package:minesync_desktop/src/state/space_state.dart';
 import 'package:ms_core/ms_core.dart';
@@ -252,6 +254,69 @@ void main() {
     expect(msText('La tua sessione precedente non risponde'), findsWidgets);
     expect(msButton('Riprendi'), findsOneWidget);
     expect(msButton('Forza e gioca…'), findsNothing);
+  });
+
+  testWidgets('stale: ore di oggi senza giorno, di un altro giorno con il giorno', (t) async {
+    final s = serverState(route: 'avventura');
+    await pumpApp(t, s);
+    expect(
+      msText(
+        'Nessun segnale dalle 17:58 (6 min fa). Possibile chiusura anomala o perdita di rete.',
+      ),
+      findsOneWidget,
+    );
+    expect(msText('tutto fino alle 17:30, salvato da bob'), findsOneWidget);
+    // salvataggio e ultimo segnale di ieri: l'ora sola sarebbe ambigua
+    final yesterday = DateTime.utc(2026, 11, 21, 12).millisecondsSinceEpoch;
+    s.debugSet(
+      spaces: [
+        for (final sp in s.spaces)
+          sp.id == 'avventura'
+              ? SpaceSummary(
+                  id: sp.id,
+                  name: sp.name,
+                  profile: sp.profile,
+                  createdAt: sp.createdAt,
+                  head: GenerationSummary.fromJson({...sp.head!.toJson(), 'ts': yesterday}),
+                  lock: LockHolder.fromJson({...sp.lock!.toJson(), 'lastBeat': yesterday + 60000}),
+                )
+              : sp,
+      ],
+    );
+    await t.pump();
+    expect(
+      msText('Nessun segnale dalle 12:01 di ieri. Possibile chiusura anomala o perdita di rete.'),
+      findsOneWidget,
+    );
+    expect(msText('tutto fino alle 12:00 di ieri, salvato da bob'), findsOneWidget);
+    expect(msText('gli ultimi minuti di gioco dopo le 12:00 di ieri'), findsOneWidget);
+    // anche nelle due conferme per forzare
+    await t.tap(msButton('Forza e gioca…'));
+    await t.pump(const Duration(seconds: 1));
+    expect(msText('tutto fino all\'ultimo salvataggio, delle 12:00 di ieri'), findsOneWidget);
+    await t.tap(msButton('Continua…'));
+    await t.pump(const Duration(seconds: 1));
+    expect(msText('12:00 di ieri'), findsOneWidget);
+    await t.tap(msButton('Attendi'));
+    for (var i = 0; i < 5; i++) {
+      await t.pump(const Duration(milliseconds: 100));
+    }
+  });
+
+  test('ora con il giorno: oggi, ieri, settimana, più indietro', () {
+    final it = FormatStrings.of(Lang.it);
+    final en = FormatStrings.of(Lang.en);
+    final now = DateTime(2026, 11, 22, 18); // domenica
+    expect(it.clockOn(DateTime(2026, 11, 22, 9, 5), now), '09:05');
+    expect(it.clockOn(DateTime(2026, 11, 21, 23, 10), now), '23:10 di ieri');
+    expect(it.clockOn(DateTime(2026, 11, 17, 8), now), '08:00 di martedì');
+    expect(it.clockOn(DateTime(2026, 11, 3, 8), now), '08:00 del 3 nov');
+    expect(it.clockOn(DateTime(2026, 11, 8, 8), now), "08:00 dell'8 nov");
+    expect(it.clockOn(DateTime(2026, 10, 1, 8), now), "08:00 dell'1 ott");
+    expect(en.clockOn(DateTime(2026, 11, 22, 9, 5), now), '09:05');
+    expect(en.clockOn(DateTime(2026, 11, 21, 23, 10), now), '23:10 yesterday');
+    expect(en.clockOn(DateTime(2026, 11, 17, 8), now), '08:00 on Tuesday');
+    expect(en.clockOn(DateTime(2026, 11, 3, 8), now), '08:00 on 3 Nov');
   });
 
   testWidgets('stale: doppia conferma prima di forzare', (t) async {

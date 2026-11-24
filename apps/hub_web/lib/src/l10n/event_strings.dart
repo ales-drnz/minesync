@@ -75,12 +75,14 @@ final class _It implements EventStrings {
     final d = e.data;
     return switch (e.type) {
       EventType.push => [('$a ha salvato sull\'hub', true)],
-      EventType.lock =>
-        d['tookOver'] == true
-            ? [('$a ha ripreso il server', true)]
-            : d['action'] == 'push'
-            ? [(a, true), (' sta salvando dall\'app', false)]
-            : [('$a ha aperto il server', true)],
+      EventType.lock => switch (d['tookOver']) {
+        final String was when was == a => [('$a ha ripreso il server', true)],
+        final String was => [('$a ha aperto il server', true), (' (era di $was)', false)],
+        _ =>
+          d['action'] == 'push'
+              ? [(a, true), (' sta salvando dall\'app', false)]
+              : [('$a ha aperto il server', true)],
+      },
       EventType.unlock =>
         d['durationMs'] is int
             ? [
@@ -230,12 +232,14 @@ final class _En implements EventStrings {
     final d = e.data;
     return switch (e.type) {
       EventType.push => [('$a saved to the hub', true)],
-      EventType.lock =>
-        d['tookOver'] == true
-            ? [('$a took the server over', true)]
-            : d['action'] == 'push'
-            ? [(a, true), (' is saving from the app', false)]
-            : [('$a opened the server', true)],
+      EventType.lock => switch (d['tookOver']) {
+        final String was when was == a => [('$a resumed the server', true)],
+        final String was => [('$a opened the server', true), (" (was $was's)", false)],
+        _ =>
+          d['action'] == 'push'
+              ? [(a, true), (' is saving from the app', false)]
+              : [('$a opened the server', true)],
+      },
       EventType.unlock =>
         d['durationMs'] is int
             ? [

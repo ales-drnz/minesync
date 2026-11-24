@@ -407,6 +407,32 @@ void main() {
       text(EventType.memberRole, const {'member': 'bob', 'role': 'member'}, actor: 'alice'),
       'alice made bob a member',
     );
+    expect(
+      text(
+        EventType.lock,
+        const {'action': 'play', 'tookOver': 'carol'},
+        actor: 'alice',
+        space: 'Avventura',
+      ),
+      'alice is playing on Avventura (was carol\'s)',
+    );
+    expect(
+      text(
+        EventType.lock,
+        const {'action': 'play', 'tookOver': 'alice'},
+        actor: 'alice',
+        space: 'Avventura',
+      ),
+      'alice resumes Avventura',
+    );
+    final it = AppStrings(Lang.it);
+    String testo(Map<String, Object?> data) => it.home
+        .eventText(EventType.lock, 'alice', 'Avventura', data, it.fmt)
+        .map((p) => p.$1)
+        .join();
+    expect(testo(const {'action': 'play'}), 'alice gioca su Avventura');
+    expect(testo(const {'tookOver': 'carol'}), 'alice gioca su Avventura (era di carol)');
+    expect(testo(const {'tookOver': 'alice'}), 'alice riprende Avventura');
     expect(s.home.eventBadge(EventType.ztnet), 'network');
     for (final type in EventType.all) {
       expect(s.home.eventBadge(type), isNotEmpty);

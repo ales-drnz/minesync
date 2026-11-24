@@ -581,17 +581,11 @@ final class AppState extends ChangeNotifier {
   }
 
   /// Libera il server [id] togliendo il lock a chi lo tiene: chiunque se è
-  /// stale, solo un admin se è vivo. Si prende il lock con force e lo si
-  /// rilascia subito, così il server resta libero per chi preme Gioca.
+  /// stale, solo un admin se è vivo. Il server resta libero per chi preme
+  /// Gioca.
   Future<void> forceUnlock(String id) async {
-    final c = _client!;
-    final g = await c.acquireLock(
-      id,
-      const LockInfo(client: desktopClient, action: 'force'),
-      force: true,
-    );
     try {
-      await c.releaseLock(id, g.token);
+      await _client!.forceReleaseLock(id);
     } finally {
       await refreshSpaces();
     }
@@ -695,6 +689,7 @@ final class AppState extends ChangeNotifier {
     }
     // un amico ha avviato un server (non quando lo avvia questo PC)
     if (e.type == EventType.lock &&
+        (e.data['action'] ?? 'play') == 'play' &&
         notifyPref('friendOpens') &&
         e.actor != null &&
         e.actor != me?.name &&

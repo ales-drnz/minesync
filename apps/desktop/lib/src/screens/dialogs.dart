@@ -30,8 +30,11 @@ Future<void> showForceDialog(BuildContext context, String id) async {
   final friends = (l.info.players.where((p) => p != l.name).length);
   // la versione si indica con l'ora, non con il numero
   final headAt = head == null ? null : app.localTime(head.ts);
-  final saved = headAt == null ? null : f.ago(headAt, now);
-  final safe = headAt == null || saved == null ? null : d.lastSafeValue(saved, hhmm(headAt));
+  // l'ora con il giorno se non è oggi; «(… fa)» solo per oggi, altrimenti
+  // ripeterebbe il giorno
+  final savedAgo = headAt == null || f.otherDay(headAt, now) ? null : f.ago(headAt, now);
+  final savedAt = headAt == null ? null : f.clockOn(headAt, now);
+  final safe = savedAt == null ? null : d.lastSafeValue(savedAgo, savedAt);
   final first = MsConfirmStep(
     title: l.stale ? s.releaseTitle(sp.name) : s.forceTitle(sp.name),
     step: l.stale ? s.forceStep : s.forceStepAdmin,
@@ -71,7 +74,8 @@ Future<void> showForceDialog(BuildContext context, String id) async {
         MsFacts([
           MsFact(l.name, s.disconnected(friends)),
           MsFact(s.mayLose, s.mayLoseValue),
-          if (headAt != null && saved != null) MsFact(s.lastOnHub, '${hhmm(headAt)} ($saved)'),
+          if (savedAt != null)
+            MsFact(s.lastOnHub, savedAgo == null ? savedAt : '$savedAt ($savedAgo)'),
           if (head != null) MsFact(s.then, d.thenValue(sp.name)),
         ]),
       ],

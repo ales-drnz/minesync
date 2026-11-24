@@ -48,6 +48,19 @@ abstract final class FormatStrings {
   String clock(DateTime t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
+  /// Ora del giorno con il giorno se non è oggi, da mettere dopo «alle» o
+  /// «dalle»: "18:42", "18:42 di ieri", "18:42 di lunedì", "18:42 del 3 nov".
+  String clockOn(DateTime t, DateTime now) {
+    final d = _days(t, now);
+    return d == 0 ? clock(t) : '${clock(t)} ${_onDay(t, d)}';
+  }
+
+  /// Il giorno di [t] ([days] giorni fa, mai 0) in coda a un'ora.
+  String _onDay(DateTime t, int days);
+
+  /// Vero se [t] è un giorno diverso da quello di [now].
+  bool otherDay(DateTime t, DateTime now) => _days(t, now) != 0;
+
   /// Quanto tempo fa, breve: "12 min fa", "ieri 21:40", "lun 22:15", "3 nov".
   String ago(DateTime t, DateTime now);
 
@@ -89,6 +102,19 @@ final class _It extends FormatStrings {
     return '${t.day} ${_mo[t.month - 1]}';
   }
 
+  static const _wdLong = [
+    'lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato', 'domenica', //
+  ];
+
+  @override
+  String _onDay(DateTime t, int days) {
+    if (days == 1) return 'di ieri';
+    if (days > 1 && days < 7) return 'di ${_wdLong[t.weekday - 1]}';
+    // dell'1, dell'8, dell'11
+    final art = t.day == 1 || t.day == 8 || t.day == 11 ? "dell'" : 'del ';
+    return '$art${t.day} ${_mo[t.month - 1]}';
+  }
+
   @override
   String ago(DateTime t, DateTime now) {
     final diff = now.difference(t);
@@ -127,6 +153,17 @@ final class _En extends FormatStrings {
     if (d == 1) return 'yesterday';
     if (d > 1 && d < 7) return _wd[t.weekday - 1];
     return '${t.day} ${_mo[t.month - 1]}';
+  }
+
+  static const _wdLong = [
+    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', //
+  ];
+
+  @override
+  String _onDay(DateTime t, int days) {
+    if (days == 1) return 'yesterday';
+    if (days > 1 && days < 7) return 'on ${_wdLong[t.weekday - 1]}';
+    return 'on ${t.day} ${_mo[t.month - 1]}';
   }
 
   @override

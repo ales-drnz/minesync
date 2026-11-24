@@ -42,7 +42,9 @@ abstract final class DialogsStrings {
   String forceText(String who, int friends);
   String forceTextStale(String who);
   String get lastSafe;
-  String lastSafeValue(String ago, String time);
+
+  /// [ago] null: il salvataggio è di un altro giorno, [time] lo dice già.
+  String lastSafeValue(String? ago, String time);
   String get risk;
   String riskValue(String who);
   String get forceHint;
@@ -223,8 +225,8 @@ final class _It implements DialogsStrings {
   @override
   String get lastSafe => 'Al sicuro sull\'hub';
   @override
-  String lastSafeValue(String ago, String time) =>
-      'tutto fino all\'ultimo salvataggio, delle $time ($ago)';
+  String lastSafeValue(String? ago, String time) =>
+      'tutto fino all\'ultimo salvataggio, delle $time${ago == null ? '' : ' ($ago)'}';
   @override
   String get risk => 'Rischio';
   @override
@@ -443,8 +445,8 @@ final class _En implements DialogsStrings {
   @override
   String get lastSafe => 'Safe on the hub';
   @override
-  String lastSafeValue(String ago, String time) =>
-      'everything up to the last save, at $time ($ago)';
+  String lastSafeValue(String? ago, String time) =>
+      'everything up to the last save, at $time${ago == null ? '' : ' ($ago)'}';
   @override
   String get risk => 'Risk';
   @override
