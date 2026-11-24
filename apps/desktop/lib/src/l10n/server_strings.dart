@@ -439,7 +439,7 @@ final class _It implements ServerStrings {
   @override
   String get more => 'Altro';
   @override
-  String get change => 'Cambia…';
+  String get change => 'Cambia';
   @override
   String get folderLater => 'Il server viene scaricato qui al primo avvio.';
   @override
@@ -814,7 +814,7 @@ final class _En implements ServerStrings {
   @override
   String get more => 'More';
   @override
-  String get change => 'Change…';
+  String get change => 'Change';
   @override
   String get folderLater => 'The server is downloaded here on first start.';
   @override

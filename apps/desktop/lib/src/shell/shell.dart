@@ -1,5 +1,6 @@
 // Cornice dell'app: barra del titolo disegnata dall'app, barra laterale con
 // i server e il contenuto della schermata corrente.
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -21,6 +22,9 @@ MsTitlebarOs get hostTitlebarOs => Platform.isMacOS
     ? MsTitlebarOs.windows
     : MsTitlebarOs.linux;
 
+/// Scala per cui è stata impostata l'ultima dimensione minima della finestra.
+double? _minScale;
+
 class Shell extends StatelessWidget {
   const Shell({super.key, required this.platform, this.os});
 
@@ -35,6 +39,14 @@ class Shell extends StatelessWidget {
     final s = context.s.shell;
     final c = MsTheme.colorsOf(context);
     final route = app.route;
+    // finestra minima in proporzione alla dimensione dell'interfaccia
+    final scale = PixelScope.of(context).scale;
+    if (scale != _minScale) {
+      _minScale = scale;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => unawaited(platform.window.setMinimumSize(minWindowDesignSize * scale)),
+      );
+    }
     final firstRun = route is FirstRunRoute;
     return ColoredBox(
       color: c.bg,

@@ -42,6 +42,7 @@ class MsPanel extends StatelessWidget {
     this.padding = MsPanelPadding.normal,
     this.foot = const [],
     this.raised = false,
+    this.scrollBody = false,
     this.semanticLabel,
   });
 
@@ -65,6 +66,10 @@ class MsPanel extends StatelessWidget {
   /// Pulsanti del piede (`.ms-panel__foot`, allineati a destra).
   final List<Widget> foot;
   final bool raised;
+
+  /// Con un'altezza imposta (es. una colonna alta quanto la finestra) testata
+  /// e piede restano fermi e il corpo scorre al suo interno.
+  final bool scrollBody;
 
   /// Etichetta della regione per le tecnologie assistive (predefinita: il
   /// titolo).
@@ -99,16 +104,30 @@ class MsPanel extends StatelessWidget {
             p.rect(0, 0, w, h, c.panel);
             p.bevel(w, h, c.pxLight, c.pxShadow);
           },
-          child: MsFillColumn(
-            // solo il piede va in fondo; senza piede il corpo resta in alto
-            fill: foot.isEmpty ? MsFill.none : MsFill.pushLast,
-            children: [
-              ?headWidget,
-              if (child != null)
-                Padding(padding: EdgeInsets.all(PixelScope.of(context).d(pad)), child: child),
-              if (foot.isNotEmpty) MsPanelFoot(children: foot),
-            ],
-          ),
+          child: scrollBody
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ?headWidget,
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.all(PixelScope.of(context).d(pad)),
+                        child: child,
+                      ),
+                    ),
+                    if (foot.isNotEmpty) MsPanelFoot(children: foot),
+                  ],
+                )
+              : MsFillColumn(
+                  // solo il piede va in fondo; senza piede il corpo resta in alto
+                  fill: foot.isEmpty ? MsFill.none : MsFill.pushLast,
+                  children: [
+                    ?headWidget,
+                    if (child != null)
+                      Padding(padding: EdgeInsets.all(PixelScope.of(context).d(pad)), child: child),
+                    if (foot.isNotEmpty) MsPanelFoot(children: foot),
+                  ],
+                ),
         ),
       ),
     );
@@ -143,7 +162,7 @@ class MsPanelHead extends StatelessWidget {
         minHeight: 40,
         // stessi margini del corpo (16): titolo, stato e pulsanti della testa
         // stanno sulle stesse verticali del contenuto sotto
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+        padding: EdgeInsets.fromLTRB(leading != null ? 8 : 16, 0, 16, 0),
         centerY: true,
         fillHeight: true,
         repaintKey: c,

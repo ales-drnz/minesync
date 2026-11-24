@@ -9,8 +9,9 @@ import 'package:window_manager/window_manager.dart';
 
 import 'platform.dart';
 
-/// Dimensione minima della finestra.
-const minWindowSize = Size(1024, 700);
+/// Dimensione minima della finestra all'avvio (scala 1); poi la aggiorna
+/// [DesktopWindow.setMinimumSize] secondo la dimensione dell'interfaccia.
+const minWindowSize = minWindowDesignSize;
 
 /// Dimensione al primo avvio.
 const defaultWindowSize = Size(1280, 800);
@@ -138,6 +139,9 @@ final class DesktopWindow with WindowListener implements WindowService {
 
   @override
   Future<void> startDragging() => windowManager.startDragging();
+
+  @override
+  Future<void> setMinimumSize(Size size) => windowManager.setMinimumSize(size);
 
   @override
   set onCloseRequested(Future<bool> Function()? handler) => _onClose = handler;

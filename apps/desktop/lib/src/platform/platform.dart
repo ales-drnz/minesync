@@ -3,6 +3,11 @@
 // singola, aggiornamento. Le implementazioni vere stanno in platform/ e si
 // scelgono in main.dart; i test usano quelle finte qui sotto.
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show Size;
+
+/// Dimensione minima della finestra in px di design: sotto non servono
+/// layout di ripiego. In px logici si moltiplica per la scala dell'interfaccia.
+const minWindowDesignSize = Size(1024, 700);
 
 /// La finestra principale (barra del titolo disegnata dall'app).
 abstract interface class WindowService {
@@ -16,6 +21,10 @@ abstract interface class WindowService {
 
   /// Avvia lo spostamento della finestra trascinando la barra del titolo.
   Future<void> startDragging();
+
+  /// Dimensione minima della finestra, in px logici: segue la dimensione
+  /// dell'interfaccia scelta nelle impostazioni.
+  Future<void> setMinimumSize(Size size);
 
   /// Chiamato quando l'utente chiude la finestra; se restituisce false la
   /// chiusura è annullata (es. sessione in corso: si chiede prima).
@@ -100,6 +109,8 @@ final class _InertWindow implements WindowService {
   Future<void> show() async {}
   @override
   Future<void> startDragging() async {}
+  @override
+  Future<void> setMinimumSize(Size size) async {}
   @override
   set onCloseRequested(Future<bool> Function()? handler) {}
 }

@@ -576,18 +576,16 @@ class MsLevel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = MsTheme.colorsOf(context);
-    // quadrato: 36 px (32 nella testa di un pannello, vedi MsCompact); dai
-    // tre caratteri il testo è piccolo per restare nel quadrato, numeri più
-    // lunghi lo allargano
+    // alto 36 (24 nella testa di un pannello, vedi MsCompact), largo quanto
+    // serve al numero: «#2189» ci sta
     final compact = MsCompact.of(context);
-    final side = compact ? 32.0 : 36.0;
-    final small = compact || text.length >= 3;
+    final small = compact;
     return Semantics(
       label: semanticLabel,
       child: PixelFrame(
-        minWidth: side,
-        minHeight: side,
-        padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 4),
+        minWidth: compact ? 32 : 40,
+        minHeight: compact ? 24 : 36,
+        padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 8),
         outset: const EdgeInsets.all(2),
         centerX: true,
         centerY: true,

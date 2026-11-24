@@ -88,33 +88,58 @@ class _HistoryScreenState extends State<HistoryScreen> {
             const SingleActivator(LogicalKeyboardKey.arrowUp): newer,
             const SingleActivator(LogicalKeyboardKey.arrowDown): older,
           },
-          child: ScreenBody(
-            children: [
-              ServerTabs(space: sp.id, current: ServerTab.history),
-              _Title(space: sp),
-              // le due colonne alte uguali: l'elenco arriva al fondo del dettaglio
-              Columns(
-                minWidth: 380,
-                children: [
-                  (1, _versions(context, ss, sp, list, sel)),
-                  (
-                    1,
-                    sel == null
-                        ? const SizedBox.shrink()
-                        : _Detail(
-                            key: ValueKey(sel.n),
-                            space: sp,
-                            state: ss,
-                            gen: sel,
-                            tab: _tab,
-                            onTab: (t) => setState(() => _tab = t),
-                            onNewer: newer,
-                            onOlder: older,
-                          ),
-                  ),
-                ],
-              ),
-            ],
+          child: LayoutBuilder(
+            builder: (context, box) {
+              final g = PixelScope.of(context);
+              Widget detail({required bool scroll}) => sel == null
+                  ? const SizedBox.shrink()
+                  : _Detail(
+                      key: ValueKey(sel.n),
+                      space: sp,
+                      state: ss,
+                      gen: sel,
+                      tab: _tab,
+                      onTab: (t) => setState(() => _tab = t),
+                      onNewer: newer,
+                      onOlder: older,
+                      scroll: scroll,
+                    );
+              // finestra stretta: una colonna sola che scorre tutta
+              if (box.maxWidth < g.d(820)) {
+                return ScreenBody(
+                  children: [
+                    ServerTabs(space: sp.id, current: ServerTab.history),
+                    _Title(space: sp),
+                    _versions(context, ss, sp, list, sel, scroll: false),
+                    detail(scroll: false),
+                  ],
+                );
+              }
+              // le due colonne occupano tutta l'altezza della finestra e
+              // scorrono al loro interno: si aprono già della loro misura
+              return Padding(
+                padding: EdgeInsets.fromLTRB(g.d(24), g.d(20), g.d(24), g.d(24)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ServerTabs(space: sp.id, current: ServerTab.history),
+                    SizedBox(height: g.d(16)),
+                    _Title(space: sp),
+                    SizedBox(height: g.d(16)),
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(child: _versions(context, ss, sp, list, sel, scroll: true)),
+                          SizedBox(width: g.d(16)),
+                          Expanded(child: detail(scroll: true)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         );
       },
@@ -126,13 +151,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
     SpaceState ss,
     SpaceSummary sp,
     List<GenerationSummary> list,
-    GenerationSummary? sel,
-  ) {
+    GenerationSummary? sel, {
+    required bool scroll,
+  }) {
     final app = AppStateScope.of(context);
     final strings = context.s;
     final s = strings.history;
     final now = app.now();
     return MsPanel(
+      scrollBody: scroll,
       title: s.versions,
       actions: [MsText.small(s.count(sp.headN), tone: MsTextTone.secondary)],
       padding: MsPanelPadding.tight,
@@ -258,7 +285,11 @@ class _Detail extends StatelessWidget {
     required this.onTab,
     required this.onNewer,
     required this.onOlder,
+    this.scroll = false,
   });
+
+  /// Alto quanto la colonna, con il contenuto che scorre dentro.
+  final bool scroll;
 
   final SpaceSummary space;
   final SpaceState state;
@@ -287,6 +318,7 @@ class _Detail extends StatelessWidget {
       restoredFrom: gen.restoredFrom,
     );
     return MsPanel(
+      scrollBody: scroll,
       raised: true,
       head: MsPanelHead(
         title: s.detailTitle,

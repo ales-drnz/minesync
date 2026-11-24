@@ -1,5 +1,6 @@
 // Collegamenti tra cornice, aggiornamento e chiusura della finestra.
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show Size;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:minesync_desktop/src/platform/platform.dart';
 import 'package:ms_ui/ms_ui.dart';
@@ -32,6 +33,8 @@ final class _Window implements WindowService {
   Future<void> show() async {}
   @override
   Future<void> startDragging() async {}
+  @override
+  Future<void> setMinimumSize(Size size) async {}
 }
 
 PlatformServices _platform(_Updates u, _Window w) {

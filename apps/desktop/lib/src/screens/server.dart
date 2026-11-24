@@ -50,7 +50,9 @@ class _ServerScreenState extends State<ServerScreen> {
     final ss = app.spaceState(widget.space)..ensureLoaded();
     // impostazioni delle sessioni dell'hub (spegnimento automatico)
     unawaited(app.loadDetails(widget.space));
-    if (app.space(widget.space)?.profile == Profile.minecraft && ss.linked) {
+    // Java si cerca anche prima di collegare una cartella: altrimenti «Sul
+    // tuo PC» resterebbe fermo su «Ricerca di Java…»
+    if (app.space(widget.space)?.profile == Profile.minecraft) {
       unawaited(ss.ensureJava());
     }
   }
