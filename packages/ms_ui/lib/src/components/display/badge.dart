@@ -9,6 +9,7 @@ import '../../theme.dart';
 import '../../tokens.g.dart';
 import '../controls/core.dart' show msText;
 import '../controls/tooltip.dart';
+import 'avatar.dart';
 import 'common.dart';
 import 'text.dart';
 
@@ -565,10 +566,25 @@ class _MsLiveState extends State<MsLive> {
   }
 }
 
+/// Colore di un [MsLevel].
+enum MsLevelTone {
+  /// Accento (verde).
+  accent,
+
+  /// Informazione (blu).
+  info,
+
+  /// Avviso (giallo).
+  warn,
+}
+
 /// Contatore "livello" (`.ms-level`, es. la generazione "#128"): blocchetto
 /// d'accento con numero in grassetto.
 class MsLevel extends StatelessWidget {
-  const MsLevel(this.text, {super.key, this.semanticLabel});
+  const MsLevel(this.text, {super.key, this.semanticLabel, this.tone = MsLevelTone.accent});
+
+  /// Colore del blocco: dice il tipo (es. salvataggio, automatico, ripristino).
+  final MsLevelTone tone;
 
   final String text;
   final String? semanticLabel;
@@ -578,6 +594,12 @@ class MsLevel extends StatelessWidget {
     final c = MsTheme.colorsOf(context);
     // alto 36 (24 nella testa di un pannello, vedi MsCompact), largo quanto
     // serve al numero: «#2189» ci sta
+    // faccia, lato in basso (più scuro) e testo
+    final (face, side, ink) = switch (tone) {
+      MsLevelTone.accent => (c.accent, c.accentLo, c.onAccent),
+      MsLevelTone.info => (c.info, msBlend(const Color(0x4D000000), c.info), c.onInfo),
+      MsLevelTone.warn => (c.warn, msBlend(const Color(0x4D000000), c.warn), c.onWarn),
+    };
     final compact = MsCompact.of(context);
     final small = compact;
     return Semantics(
@@ -589,17 +611,17 @@ class MsLevel extends StatelessWidget {
         outset: const EdgeInsets.all(2),
         centerX: true,
         centerY: true,
-        repaintKey: c,
+        repaintKey: (c, tone),
         painter: (p, w, h) {
           p.ring(0, 0, w, h, c.pxOutline);
-          p.rect(0, 0, w, h, c.accent);
-          p.rect(0, h - 2, w, 2, c.accentLo);
+          p.rect(0, 0, w, h, face);
+          p.rect(0, h - 2, w, 2, side);
         },
         child: MsText(
           text,
           kind: small ? MsTextKind.small : MsTextKind.body,
           weight: 700,
-          color: c.onAccent,
+          color: ink,
           maxLines: 1,
         ),
       ),
@@ -690,5 +712,33 @@ class MsMeta extends StatelessWidget {
       );
     }
     return Wrap(spacing: g.d(4), runSpacing: g.d(4), children: [for (final t in items) tag(t)]);
+  }
+}
+
+/// Nome di un giocatore come etichetta piatta, nel colore del suo avatar
+/// ([MsAvatarFace.primary]): ogni giocatore si riconosce a colpo d'occhio.
+class MsNameTag extends StatelessWidget {
+  const MsNameTag(this.name, {super.key});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = MsTheme.colorsOf(context);
+    final bg = msAvatarColor(c, MsAvatarFace.of(name).primary);
+    return PixelFrame(
+      minHeight: 20,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      centerY: true,
+      repaintKey: bg,
+      painter: (p, w, h) => p.rect(0, 0, w, h, bg),
+      child: MsText(
+        name,
+        kind: MsTextKind.small,
+        color: MsAvatarFace.eyeColor,
+        weight: 700,
+        maxLines: 1,
+      ),
+    );
   }
 }

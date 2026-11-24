@@ -556,14 +556,16 @@ class GenerationRow extends StatelessWidget {
     super.key,
     required this.gen,
     required this.isHead,
-    this.meta,
+    this.when,
     this.selected = false,
     this.onTap,
   });
 
   final GenerationSummary gen;
   final bool isHead;
-  final String? meta;
+
+  /// Quando, già formattato (di default «N min fa»).
+  final String? when;
   final bool selected;
   final VoidCallback? onTap;
 
@@ -573,15 +575,25 @@ class GenerationRow extends StatelessWidget {
     final strings = context.s;
     final s = strings.server;
     final st = gen.stats;
+    // il colore del numero dice il tipo: verde salvataggio, blu automatico,
+    // giallo ripristino (il titolo lo dice a parole)
+    final tone = switch (gen.kind) {
+      GenerationKind.push => MsLevelTone.accent,
+      GenerationKind.autosave => MsLevelTone.info,
+      GenerationKind.restore => MsLevelTone.warn,
+    };
     return MsListRow(
       // il titolo va a capo invece di ridursi a poche lettere accanto a «Attuale»
       titleMaxLines: 2,
       selected: selected,
       onTap: onTap,
-      // colonna fissa: i quadrati restano allineati anche con #10 e oltre
+      // colonna fissa: i numeri restano allineati anche con #10 e oltre
       lead: SizedBox(
-        width: PixelScope.of(context).d(48),
-        child: Align(alignment: Alignment.centerLeft, child: MsLevel('#${gen.n}')),
+        width: PixelScope.of(context).d(56),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: MsLevel('#${gen.n}', tone: tone),
+        ),
       ),
       title: s.genTitle(
         kind: gen.kind.name,
@@ -589,12 +601,20 @@ class GenerationRow extends StatelessWidget {
         message: gen.message,
         restoredFrom: gen.restoredFrom,
       ),
-      // il conteggio dei file sta tra i dati: a destra resta solo «Attuale»,
-      // il titolo ha lo spazio che serve
-      meta: listMeta([
-        meta ?? listMeta([gen.author, strings.fmt.ago(app.localTime(gen.ts), app.now())]),
-        s.statsLabel(st.added, st.changed, st.removed),
-      ]),
+      // chi (nel suo colore), quando, quanto e cosa è cambiato
+      metaChild: Row(
+        children: [
+          MsNameTag(gen.author),
+          SizedBox(width: PixelScope.of(context).d(4)),
+          Expanded(
+            child: MsMeta([
+              when ?? strings.fmt.ago(app.localTime(gen.ts), app.now()),
+              strings.fmt.size(st.size),
+              s.statsLabel(st.added, st.changed, st.removed),
+            ], maxLines: 1),
+          ),
+        ],
+      ),
       trail: isHead ? MsPill(s.head, tone: MsStatusTone.ok) : null,
     );
   }

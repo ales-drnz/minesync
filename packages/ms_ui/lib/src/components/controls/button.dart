@@ -188,7 +188,14 @@ class MsButton extends StatelessWidget {
     final compact = size == MsButtonSize.sm && MsCompact.of(context);
     final (padding, minH, minW, gap, role) = switch ((_kind, size)) {
       (_Kind.play, _) => (const EdgeInsets.fromLTRB(32, 16, 32, 16), 72.0, 240.0, 16.0, null),
-      (_Kind.icon, MsButtonSize.sm) => (EdgeInsets.zero, 36.0, 44.0, 0.0, null),
+      // quadrati: 36 (24 nella testa di un pannello) e 44
+      (_Kind.icon, MsButtonSize.sm) => (
+        EdgeInsets.zero,
+        compact ? 24.0 : 36.0,
+        compact ? 24.0 : 36.0,
+        0.0,
+        null,
+      ),
       (_Kind.icon, _) => (EdgeInsets.zero, 44.0, 44.0, 0.0, null),
       (_, MsButtonSize.sm) => (
         EdgeInsets.symmetric(horizontal: 12, vertical: compact ? 2 : 6),
@@ -221,7 +228,7 @@ class MsButton extends StatelessWidget {
     Widget frame = PixelFrame(
       padding: padding,
       outset: outset,
-      minWidth: _kind == _Kind.icon ? 44 : minW,
+      minWidth: minW,
       minHeight: minH,
       centerX: !spread,
       centerY: true,
@@ -243,9 +250,8 @@ class MsButton extends StatelessWidget {
       },
       child: content,
     );
-    if (_kind == _Kind.icon) {
-      frame = SizedBox(width: g.d(48), child: frame);
-    } else if (block) {
+    // i pulsanti a icona sono quadrati (minimo uguale in larghezza e altezza)
+    if (block && _kind != _Kind.icon) {
       frame = SizedBox(width: double.infinity, child: frame);
     }
     return frame;

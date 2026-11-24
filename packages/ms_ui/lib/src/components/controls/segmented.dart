@@ -33,7 +33,11 @@ class MsSegmented<T> extends StatefulWidget {
     required this.onChanged,
     this.semanticLabel,
     this.forcedStates = const {},
+    this.expand = false,
   });
+
+  /// Riempie la larghezza disponibile con segmenti di uguale larghezza.
+  final bool expand;
 
   final List<MsSegment<T>> segments;
   final T value;
@@ -99,10 +103,13 @@ class _MsSegmentedState<T> extends State<MsSegmented<T>> {
           p.bevel(w, h, c.pxLight, c.pxShadow, inverted: true);
         },
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: widget.expand ? MainAxisSize.max : MainAxisSize.min,
           children: [
             for (var i = 0; i < widget.segments.length; i++)
-              _segment(context, i, i == sel, enabled, skip: i != cur),
+              if (widget.expand)
+                Expanded(child: _segment(context, i, i == sel, enabled, skip: i != cur))
+              else
+                _segment(context, i, i == sel, enabled, skip: i != cur),
           ],
         ),
       ),

@@ -18,6 +18,9 @@ import 'server.dart' show GenerationRow;
 /// File mostrati per scheda nel dettaglio.
 const _filesShown = 12;
 
+/// File mostrati quando l'elenco scorre dentro la colonna.
+const _filesShownScroll = 300;
+
 enum _Filter { all, saves, restores }
 
 enum _DiffTab { added, changed, removed }
@@ -158,13 +161,25 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final strings = context.s;
     final s = strings.history;
     final now = app.now();
+    final rows = [
+      for (final g in list)
+        GenerationRow(
+          gen: g,
+          isHead: g.n == sp.headN,
+          selected: identical(g, sel),
+          when: strings.fmt.when(app.localTime(g.ts), now),
+          onTap: () => setState(() => _selected = g.n),
+        ),
+    ];
     return MsPanel(
-      scrollBody: scroll,
+      fillBody: scroll,
       title: s.versions,
       actions: [MsText.small(s.count(sp.headN), tone: MsTextTone.secondary)],
       padding: MsPanelPadding.tight,
-      child: MsStack(
-        gap: 10,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: PixelScope.of(context).d(10),
         children: [
           // ricerca e filtro alti uguali; in una colonna stretta la ricerca
           // va sotto invece di ridursi a poche lettere
@@ -172,6 +187,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             builder: (context, box) {
               final g = PixelScope.of(context);
               final filter = MsSegmented<_Filter>(
+                expand: true,
                 semanticLabel: s.filterLabel,
                 value: _filter,
                 segments: [
@@ -221,24 +237,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       tone: MsTextTone.secondary,
                     ),
             )
+          else if (scroll)
+            // fino al fondo del pannello, con le righe che scorrono dentro
+            Expanded(
+              child: MsList(fill: true, semanticLabel: s.listLabel(sp.name), children: rows),
+            )
           else
-            MsList(
-              semanticLabel: s.listLabel(sp.name),
-              children: [
-                for (final g in list)
-                  GenerationRow(
-                    gen: g,
-                    isHead: g.n == sp.headN,
-                    selected: identical(g, sel),
-                    meta: listMeta([
-                      g.author,
-                      strings.fmt.when(app.localTime(g.ts), now),
-                      strings.fmt.size(g.stats.size),
-                    ]),
-                    onTap: () => setState(() => _selected = g.n),
-                  ),
-              ],
-            ),
+            MsList(semanticLabel: s.listLabel(sp.name), children: rows),
           if (!ss.historyEnd && ss.history.isNotEmpty)
             Align(
               alignment: Alignment.centerLeft,
@@ -263,10 +268,10 @@ class _Title extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = context.s.history;
-    // titolo e spiegazione sulla stessa riga, la spiegazione va sotto solo
-    // se non c'è spazio
-    return MsRow(
-      gap: 16,
+    // la spiegazione sta sempre sotto il titolo, come nelle altre sezioni
+    return MsStack(
+      gap: 4,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         MsText.h2(s.title(space.name)),
         MsText(s.intro, tone: MsTextTone.secondary),
@@ -318,19 +323,25 @@ class _Detail extends StatelessWidget {
       restoredFrom: gen.restoredFrom,
     );
     return MsPanel(
-      scrollBody: scroll,
+      fillBody: scroll,
       raised: true,
       head: MsPanelHead(
         title: s.detailTitle,
         plain: true,
-        leading: MsLevel('#${gen.n}'),
+        leading: MsLevel(
+          '#${gen.n}',
+          tone: switch (gen.kind) {
+            GenerationKind.push => MsLevelTone.accent,
+            GenerationKind.autosave => MsLevelTone.info,
+            GenerationKind.restore => MsLevelTone.warn,
+          },
+        ),
         actions: [
           MsTooltip(
             message: s.nextTip,
             child: MsButton.icon(
               icon: const RotatedBox(quarterTurns: 2, child: MsIcon(MsIcons.chevDown)),
               semanticLabel: s.next,
-              variant: MsButtonVariant.ghost,
               size: MsButtonSize.sm,
               onPressed: onNewer,
             ),
@@ -340,7 +351,6 @@ class _Detail extends StatelessWidget {
             child: MsButton.icon(
               icon: const MsIcon(MsIcons.chevDown),
               semanticLabel: s.prev,
-              variant: MsButtonVariant.ghost,
               size: MsButtonSize.sm,
               onPressed: onOlder,
             ),
@@ -360,8 +370,10 @@ class _Detail extends StatelessWidget {
           ),
         ],
       ],
-      child: MsStack(
-        gap: 16,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: PixelScope.of(context).d(16),
         children: [
           // il messaggio della versione così com'è, non in maiuscolo come
           // l'etichetta della testata
@@ -380,10 +392,19 @@ class _Detail extends StatelessWidget {
               ]),
             ],
           ),
-          FutureBuilder<GenerationDiff>(
-            future: state.diff(gen.n),
-            builder: (context, snap) => _diff(context, snap),
-          ),
+          // con la colonna alta quanto la finestra, i file arrivano al fondo
+          if (scroll)
+            Expanded(
+              child: FutureBuilder<GenerationDiff>(
+                future: state.diff(gen.n),
+                builder: (context, snap) => _diff(context, snap),
+              ),
+            )
+          else
+            FutureBuilder<GenerationDiff>(
+              future: state.diff(gen.n),
+              builder: (context, snap) => _diff(context, snap),
+            ),
         ],
       ),
     );
@@ -403,12 +424,36 @@ class _Detail extends StatelessWidget {
     final g = PixelScope.of(context);
     // filtro dentro un pannello: un selettore a segmenti come gli altri, le
     // schede grandi restano per la navigazione della pagina
-    return MsStack(
-      gap: 8,
+    final shown = scroll ? _filesShownScroll : _filesShown;
+    final box = MsSlot(
+      fill: scroll,
+      padding: EdgeInsets.fromLTRB(g.d(12), g.d(8), g.d(12), g.d(8)),
+      child: MsStack(
+        gap: 6,
+        children: [
+          if (files.isEmpty) MsText.small(s.noFiles, tone: MsTextTone.secondary),
+          for (final (path, size) in files.take(shown))
+            Row(
+              spacing: g.d(12),
+              children: [
+                Expanded(child: MsText.mono(path, maxLines: 1)),
+                MsText.mono(strings.fmt.size(size), tone: MsTextTone.secondary),
+              ],
+            ),
+          if (files.length > shown)
+            MsText.small(s.andMore(files.length - shown), tone: MsTextTone.secondary),
+        ],
+      ),
+    );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: g.d(8),
       children: [
         Align(
           alignment: Alignment.centerLeft,
           child: MsSegmented<_DiffTab>(
+            expand: true,
             semanticLabel: s.diffLabel(d.parent),
             value: tab,
             onChanged: onTab,
@@ -419,25 +464,7 @@ class _Detail extends StatelessWidget {
             ],
           ),
         ),
-        MsSlot(
-          padding: EdgeInsets.fromLTRB(g.d(12), g.d(8), g.d(12), g.d(8)),
-          child: MsStack(
-            gap: 6,
-            children: [
-              if (files.isEmpty) MsText.small(s.noFiles, tone: MsTextTone.secondary),
-              for (final (path, size) in files.take(_filesShown))
-                Row(
-                  spacing: g.d(12),
-                  children: [
-                    Expanded(child: MsText.mono(path, maxLines: 1)),
-                    MsText.mono(strings.fmt.size(size), tone: MsTextTone.secondary),
-                  ],
-                ),
-              if (files.length > _filesShown)
-                MsText.small(s.andMore(files.length - _filesShown), tone: MsTextTone.secondary),
-            ],
-          ),
-        ),
+        if (scroll) Expanded(child: box) else box,
       ],
     );
   }

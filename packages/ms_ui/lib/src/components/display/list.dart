@@ -20,7 +20,11 @@ class MsList extends StatelessWidget {
     this.flat = false,
     this.gap = 2,
     this.semanticLabel,
+    this.fill = false,
   });
+
+  /// Con un'altezza imposta la occupa tutta e le righe scorrono dentro.
+  final bool fill;
 
   final List<Widget> children;
   final bool flat;
@@ -43,13 +47,14 @@ class MsList extends StatelessWidget {
             child: PixelFrame(
               padding: const EdgeInsets.all(4),
               outset: const EdgeInsets.all(2),
+              fillHeight: fill,
               repaintKey: c,
               painter: (p, w, h) {
                 p.ring(0, 0, w, h, c.pxOutline);
                 p.rect(0, 0, w, h, c.inset);
                 p.bevel(w, h, c.pxLight, c.pxShadow, inverted: true);
               },
-              child: column,
+              child: fill ? SingleChildScrollView(child: column) : column,
             ),
           );
     return Semantics(container: true, explicitChildNodes: true, label: semanticLabel, child: body);
@@ -65,6 +70,7 @@ class MsListRow extends StatelessWidget {
     this.title,
     this.titleSpans,
     this.meta,
+    this.metaChild,
     this.lead,
     this.trail,
     this.time,
@@ -84,6 +90,9 @@ class MsListRow extends StatelessWidget {
   /// lock"), peso 400 e grassetto 700.
   final List<MsSpan>? titleSpans;
   final String? meta;
+
+  /// Riga secondaria come widget (es. nome colorato e dati), al posto di [meta].
+  final Widget? metaChild;
   final Widget? lead;
   final Widget? trail;
   final String? time;
@@ -142,7 +151,9 @@ class MsListRow extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         titleWidget,
-                        if (meta != null)
+                        if (metaChild != null)
+                          Padding(padding: const EdgeInsets.only(top: 2), child: metaChild)
+                        else if (meta != null)
                           // più dati: etichette piatte invece dei separatori a pallino
                           meta!.contains(' · ')
                               ? Padding(

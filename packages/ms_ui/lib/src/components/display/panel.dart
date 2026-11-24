@@ -42,7 +42,7 @@ class MsPanel extends StatelessWidget {
     this.padding = MsPanelPadding.normal,
     this.foot = const [],
     this.raised = false,
-    this.scrollBody = false,
+    this.fillBody = false,
     this.semanticLabel,
   });
 
@@ -67,9 +67,11 @@ class MsPanel extends StatelessWidget {
   final List<Widget> foot;
   final bool raised;
 
-  /// Con un'altezza imposta (es. una colonna alta quanto la finestra) testata
-  /// e piede restano fermi e il corpo scorre al suo interno.
-  final bool scrollBody;
+  /// Con un'altezza imposta (es. una colonna alta quanto la finestra) il
+  /// corpo prende tutta l'altezza fra testata e piede: dentro, un riquadro
+  /// che scorre ([MsList.fill], [MsSlot.fill]) arriva fino al fondo con lo
+  /// stesso margine dei lati.
+  final bool fillBody;
 
   /// Etichetta della regione per le tecnologie assistive (predefinita: il
   /// titolo).
@@ -104,13 +106,13 @@ class MsPanel extends StatelessWidget {
             p.rect(0, 0, w, h, c.panel);
             p.bevel(w, h, c.pxLight, c.pxShadow);
           },
-          child: scrollBody
+          child: fillBody
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     ?headWidget,
                     Expanded(
-                      child: SingleChildScrollView(
+                      child: Padding(
                         padding: EdgeInsets.all(PixelScope.of(context).d(pad)),
                         child: child,
                       ),
@@ -162,7 +164,7 @@ class MsPanelHead extends StatelessWidget {
         minHeight: 40,
         // stessi margini del corpo (16): titolo, stato e pulsanti della testa
         // stanno sulle stesse verticali del contenuto sotto
-        padding: EdgeInsets.fromLTRB(leading != null ? 8 : 16, 0, 16, 0),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
         centerY: true,
         fillHeight: true,
         repaintKey: c,
@@ -240,7 +242,13 @@ class MsPanelFoot extends StatelessWidget {
 /// [square] è lo slot quadrato da 56 px (`.ms-slot--sq`) che ospita un
 /// contenuto di 48×48 centrato (texture, icona).
 class MsSlot extends StatelessWidget {
-  const MsSlot({super.key, required this.child, this.square = false, this.padding}) : _side = 56;
+  const MsSlot({
+    super.key,
+    required this.child,
+    this.square = false,
+    this.padding,
+    this.fill = false,
+  }) : _side = 56;
 
   /// Slot quadrato di lato [side] px: il contenuto ha un riquadro di
   /// [side] − 8 px per lato. Senza [side] prende la larghezza fissa del
@@ -249,7 +257,11 @@ class MsSlot extends StatelessWidget {
   const MsSlot.square({super.key, required this.child, double? side})
     : _side = side,
       square = true,
-      padding = null;
+      padding = null,
+      fill = false;
+
+  /// Con un'altezza imposta la occupa tutta e il contenuto scorre dentro.
+  final bool fill;
 
   final Widget child;
   final bool square;
@@ -278,6 +290,7 @@ class MsSlot extends StatelessWidget {
     final g = PixelScope.of(context);
     return PixelFrame(
       padding: padding ?? EdgeInsets.all(square ? 4 : 12),
+      fillHeight: fill,
       minWidth: square ? side : 0,
       minHeight: square ? side : 0,
       centerX: square,
@@ -292,6 +305,8 @@ class MsSlot extends StatelessWidget {
               dimension: g.d(side - 8),
               child: Center(child: child),
             )
+          : fill
+          ? SingleChildScrollView(child: child)
           : child,
     );
   }
