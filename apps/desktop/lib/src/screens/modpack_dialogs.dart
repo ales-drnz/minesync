@@ -508,9 +508,11 @@ class _LockedApplyDialogState extends State<LockedApplyDialog> {
 /// Righe del riepilogo delle modifiche (anche nella barra in basso).
 List<String> changeLines(BuildContext context, PackDiff d, {bool packIsNew = false}) {
   final s = context.s.modpack;
-  // il file interno del pacchetto non si mostra: se è l'unica novità, si
-  // dice che è la prima configurazione delle mod
-  final lines = [
+  // il file interno del pacchetto non si mostra: al suo posto la prima
+  // configurazione delle mod, che conta come una modifica (come in
+  // ModpackState.changeCount)
+  return [
+    if (packIsNew) s.lineFirstSetup,
     if (d.mcVersion != null || d.loader != null)
       s.lineTarget(loaderLabel(context, d.loader?.$2.$1 ?? Loader.vanilla), d.mcVersion?.$2 ?? ''),
     for (final m in d.added) s.lineAdded(modName(m), modVersion(m)),
@@ -521,7 +523,6 @@ List<String> changeLines(BuildContext context, PackDiff d, {bool packIsNew = fal
     for (final (_, b) in d.changed) s.lineChanged(modName(b)),
     if (d.sharedChanged) s.lineShared,
   ];
-  return lines.isEmpty && packIsNew ? [s.lineFirstSetup] : lines;
 }
 
 Future<bool> showApplyConfirmDialog(

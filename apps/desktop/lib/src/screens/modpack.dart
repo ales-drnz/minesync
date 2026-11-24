@@ -770,7 +770,11 @@ class _ModDetailDialogState extends State<_ModDetailDialog> {
           MsFacts([
             MsFact(s.file, mod.file),
             MsFact('SHA-1', '${mod.sha1.substring(0, 4)}…${mod.sha1.substring(36)}'),
-            MsFact(s.viewClient, mod.side.onClient ? s.inClientPack : s.notInClientPack),
+            MsFact(s.viewClient, switch (mod.side) {
+              PackSide.both => s.inClientPack,
+              PackSide.client => s.onlyClientPack,
+              PackSide.server => s.notInClientPack,
+            }),
             if (manual) MsFact(s.manualUpdate, s.manualUpdateValue),
           ]),
           MsField(
@@ -1095,7 +1099,7 @@ class PendingBar extends StatelessWidget {
       server: space.name,
       next: head + 1,
       head: head,
-      packIsNew: mp.packIsNew,
+      packIsNew: mp.firstSetup,
     );
     if (ok) await mp.apply();
   }
@@ -1107,7 +1111,7 @@ class PendingBar extends StatelessWidget {
     final diff = mp.changes;
     final lines = diff == null
         ? const <String>[]
-        : changeLines(context, diff, packIsNew: mp.packIsNew);
+        : changeLines(context, diff, packIsNew: mp.firstSetup);
     final who = mp.holder;
     switch (st) {
       case Applying(:final step, :final done, :final total, :final current):
@@ -1193,9 +1197,11 @@ class PendingBar extends StatelessWidget {
         ),
       ],
     );
-    // come nei dialoghi e nel wizard: «Annulla» poi l'azione principale, a destra
+    // come nei dialoghi e nel wizard: «Annulla» poi l'azione principale, a
+    // destra anche quando vanno a capo
     final actions = MsRow(
       gap: 8,
+      end: true,
       children: [
         MsButton(label: s.discard, size: MsButtonSize.sm, onPressed: mp.discard),
         if (who != null)

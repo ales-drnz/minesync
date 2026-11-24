@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:minesync_desktop/src/l10n/l10n.dart';
+import 'package:minesync_desktop/src/screens/common.dart' show ServerTabs;
 import 'package:minesync_desktop/src/screens/screens.dart';
 import 'package:minesync_desktop/src/state/app_state.dart';
 import 'package:ms_core/ms_core.dart';
@@ -64,6 +65,16 @@ Finder _pill(String label) =>
 
 void main() {
   setUpAll(loadFonts);
+
+  testWidgets('schede del server nello stesso punto in sessione e in panoramica', (t) async {
+    final a = sessionAppState(sampleSession(), port: reachablePort);
+    await pumpApp(t, a, size: const Size(1280, 1500));
+    final inSession = t.getRect(find.byType(ServerTabs));
+    a.debugSet(route: const ServerRoute('creativo'));
+    await t.pump();
+    expect(find.byType(SessionScreen), findsNothing);
+    expect(t.getRect(find.byType(ServerTabs)), inSession);
+  });
 
   testWidgets('in gioco: golden', (t) async {
     await expectAppGolden(

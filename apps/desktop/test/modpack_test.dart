@@ -269,6 +269,20 @@ void main() {
     }
   });
 
+  testWidgets('barra delle modifiche: pulsanti andati a capo allineati a destra', (t) async {
+    var wrapped = 0;
+    for (var w = 700.0; w <= 1400; w += 25) {
+      await pumpApp(t, modState(space: 'survival'), size: Size(w, 900));
+      final when = t.getRect(msButton('Applica quando bob chiude'));
+      final apply = t.getRect(msButton('Applica e carica sull\'hub'));
+      if (apply.top > when.top + 1) {
+        wrapped++;
+        expect(apply.right, closeTo(when.right, .5), reason: 'larghezza $w');
+      }
+    }
+    expect(wrapped, greaterThan(0), reason: 'nessuna larghezza con i pulsanti su due righe');
+  });
+
   testWidgets('filtro «Solo server»: solo le mod che i giocatori non scaricano', (t) async {
     await pumpApp(t, modState(dirty: false, search: false), size: _big);
     t.widget<MsSegmented<ModFilter>>(find.byType(MsSegmented<ModFilter>)).onChanged!(
@@ -296,10 +310,18 @@ void main() {
     final side = t.widget<MsSegmented<PackSide>>(find.byType(MsSegmented<PackSide>));
     expect(side.segments.map((s) => s.label), ['Server', 'Server e giocatori', 'Giocatori']);
     expect(side.segments.every((s) => s.icon != null), isTrue);
+    expect(msText('resta solo sul server'), findsOneWidget);
     // le modifiche si vedono subito nel dialogo
     side.onChanged!(PackSide.both);
     await t.pump();
     expect(s.modpack('creativo').draft!.byKey(chunky.key)!.side, PackSide.both);
+    expect(msText('incluso anche nel pacchetto per i giocatori'), findsOneWidget);
+    t.widget<MsSegmented<PackSide>>(find.byType(MsSegmented<PackSide>)).onChanged!(PackSide.client);
+    await t.pump();
+    // solo giocatori: non «anche», non va sul server
+    expect(msText('solo nel pacchetto per i giocatori, non sul server'), findsOneWidget);
+    t.widget<MsSegmented<PackSide>>(find.byType(MsSegmented<PackSide>)).onChanged!(PackSide.both);
+    await t.pump();
     expect(
       t.widget<MsSegmented<PackSide>>(find.byType(MsSegmented<PackSide>)).value,
       PackSide.both,
@@ -485,6 +507,23 @@ void main() {
     expect(
       find.byWidgetPredicate(
         (w) => w is MsMeta && w.items.contains('Prima configurazione delle mod'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('prima volta con altre modifiche: il conteggio e l\'elenco coincidono', (t) async {
+    final s = modState(packIsNew: true);
+    await pumpApp(t, s, size: _big);
+    final mp = s.modpack('creativo');
+    expect(mp.firstSetup, isTrue);
+    final lines = changeLines(t.element(find.byType(MsMeta).first), mp.changes!, packIsNew: true);
+    expect(lines.first, 'Prima configurazione delle mod');
+    expect(lines, hasLength(mp.changeCount));
+    expect(msText('${mp.changeCount} modifiche da applicare'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (w) => w is MsMeta && w.items.first == 'Prima configurazione delle mod',
       ),
       findsOneWidget,
     );

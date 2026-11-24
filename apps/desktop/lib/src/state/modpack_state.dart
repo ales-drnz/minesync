@@ -169,6 +169,10 @@ final class ModpackController extends ChangeNotifier {
   bool _baseIsNew = false;
   bool get packIsNew => _baseIsNew;
 
+  /// Prima configurazione delle mod: il pacchetto non c'è ancora sull'hub e
+  /// le mod sì. Conta come una modifica e si mostra sempre nell'elenco.
+  bool get firstSetup => _baseIsNew && (_draft?.mods.isNotEmpty ?? false);
+
   /// Le modifiche preparate (vuote se non ce ne sono).
   PackDiff? get changes {
     final b = _base, d = _draft;
@@ -186,7 +190,7 @@ final class ModpackController extends ChangeNotifier {
         c.toggled.length +
         c.changed.length +
         (c.sharedChanged ? 1 : 0) +
-        (_baseIsNew && (_draft?.mods.isNotEmpty ?? false) ? 1 : 0);
+        (firstSetup ? 1 : 0);
   }
 
   bool get dirty => changeCount > 0;

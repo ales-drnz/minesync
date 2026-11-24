@@ -16,6 +16,7 @@ REVISIONE.md
 build/
 .flutter-plugins-dependencies
 **/test/failures/
+**/test/*/failures/
 
 # deploy/dl: la riempie la CI di release (download desktop + update/)
 deploy/dl/*

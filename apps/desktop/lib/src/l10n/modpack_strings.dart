@@ -94,6 +94,7 @@ abstract final class ModpackStrings {
   String get whereLabel;
   String get whereHint;
   String get inClientPack;
+  String get onlyClientPack;
   String get notInClientPack;
   String get optionalForPlayers;
   String get pinLabel;
@@ -498,6 +499,8 @@ final class _It extends ModpackStrings {
       'Nel dubbio lascia «Server»: se manca ai giocatori, Minecraft lo segnala all\'ingresso.';
   @override
   String get inClientPack => 'incluso anche nel pacchetto per i giocatori';
+  @override
+  String get onlyClientPack => 'solo nel pacchetto per i giocatori, non sul server';
   @override
   String get notInClientPack => 'resta solo sul server';
   @override
@@ -1196,6 +1199,8 @@ final class _En extends ModpackStrings {
       'If in doubt, leave «Server»: if players need it, Minecraft reports it when they join.';
   @override
   String get inClientPack => 'also included in the players pack';
+  @override
+  String get onlyClientPack => 'only in the players pack, not on the server';
   @override
   String get notInClientPack => 'stays on the server only';
   @override

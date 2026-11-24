@@ -235,10 +235,22 @@ class _SessionScreenState extends State<SessionScreen> {
       // la sessione è stata chiusa: torna la panoramica
       return ServerScreen(space: widget.space);
     }
+    // schede alla stessa distanza dal contenuto delle altre pagine del
+    // server (ScreenBody): passando da una all'altra non si spostano
     final head = <Widget>[
-      tabs,
-      ..._alerts(context, app, s),
-      _StatusPanel(session: s, onSave: _save, onStop: _stop, onBack: () => _back(app)),
+      MsStack(
+        gap: 16,
+        children: [
+          tabs,
+          MsStack(
+            gap: 24,
+            children: [
+              ..._alerts(context, app, s),
+              _StatusPanel(session: s, onSave: _save, onStop: _stop, onBack: () => _back(app)),
+            ],
+          ),
+        ],
+      ),
     ];
     final side = MsStack(
       gap: 16,
@@ -247,7 +259,8 @@ class _SessionScreenState extends State<SessionScreen> {
         _NoticesPanel(session: s),
       ],
     );
-    final pad = EdgeInsets.fromLTRB(g.d(32), g.d(24), g.d(32), g.d(24));
+    // stessi margini di ScreenBody
+    final pad = EdgeInsets.fromLTRB(g.d(24), g.d(20), g.d(24), g.d(24));
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyS, control: true): _save,

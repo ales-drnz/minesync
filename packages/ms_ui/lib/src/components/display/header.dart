@@ -229,19 +229,35 @@ class MsStack extends StatelessWidget {
 /// centrata in verticale. Con [wrap] (predefinito, come `flex-wrap: wrap`)
 /// va a capo; senza, è una [Row] che accetta [Spacer] ed [Expanded].
 class MsRow extends StatelessWidget {
-  const MsRow({super.key, required this.children, this.gap = 12, this.wrap = true});
+  const MsRow({
+    super.key,
+    required this.children,
+    this.gap = 12,
+    this.wrap = true,
+    this.end = false,
+  });
 
   final List<Widget> children;
   final double gap;
   final bool wrap;
 
+  /// Allineata a destra, anche le righe dopo un a capo (pulsanti d'azione).
+  final bool end;
+
   @override
   Widget build(BuildContext context) {
     final d = PixelScope.of(context).d(gap);
-    if (!wrap) return Row(spacing: d, children: children);
+    if (!wrap) {
+      return Row(
+        spacing: d,
+        mainAxisAlignment: end ? MainAxisAlignment.end : MainAxisAlignment.start,
+        children: children,
+      );
+    }
     return Wrap(
       spacing: d,
       runSpacing: d,
+      alignment: end ? WrapAlignment.end : WrapAlignment.start,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: children,
     );
