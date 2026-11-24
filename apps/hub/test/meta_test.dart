@@ -253,6 +253,16 @@ void main() {
       expect((await chip())?.mods, 4);
     });
 
+    test('B-META-06 un calcolo vecchio che finisce dopo non sostituisce il riassunto', () {
+      final w = t.hub.world.world;
+      w.debugKeepChip(space, 12, const WorldChip(mcVersion: '1.21.1', mods: 97));
+      // il calcolo della #11, partito prima, finisce dopo
+      w.debugKeepChip(space, 11, const WorldChip(mcVersion: '1.21.1', mods: 95));
+      expect(w.debugLastChip(space)?.mods, 97);
+      w.debugKeepChip(space, 13, const WorldChip(mcVersion: '1.21.1', mods: 96));
+      expect(w.debugLastChip(space)?.mods, 96);
+    });
+
     test('giocatori: unione di stats, ops e whitelist; online dal lock play', () async {
       await t.push(space, worldFiles());
       final tok = t.tokens['$space/alice']!;

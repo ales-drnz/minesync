@@ -118,7 +118,9 @@ final class WorldMeta {
 
   /// Ultimo riassunto calcolato per spazio: risponde mentre quello della
   /// HEAD nuova è in calcolo.
-  final _lastChip = <String, WorldChip>{};
+  /// Con il numero della versione: un calcolo vecchio che finisce dopo non
+  /// sostituisce quello di una versione più nuova.
+  final _lastChip = <String, (int, WorldChip)>{};
   final _icons = <String, Icon>{};
 
   bool _closed = false;
@@ -223,7 +225,7 @@ final class WorldMeta {
     final hit = _lru[key];
     if (hit != null) return hit.chip;
     warm(space);
-    return _lastChip[space];
+    return _lastChip[space]?.$2;
   }
 
   /// Avvia in sottofondo il calcolo per la HEAD di [space] (dopo un
@@ -233,6 +235,17 @@ final class WorldMeta {
     unawaited(
       _current(space).then<void>((_) {}, onError: (Object e) => _log('hub: mondo di $space: $e')),
     );
+  }
+
+  /// Per i test: registra il riassunto calcolato per la versione [n].
+  void debugKeepChip(String space, int n, WorldChip chip) => _keepChip(space, n, chip);
+
+  /// Il riassunto di riserva di [space] (per i test).
+  WorldChip? debugLastChip(String space) => _lastChip[space]?.$2;
+
+  void _keepChip(String space, int n, WorldChip chip) {
+    final old = _lastChip[space];
+    if (old == null || n >= old.$1) _lastChip[space] = (n, chip);
   }
 
   /// Dimentica uno spazio cancellato (memoria e cache su disco).
@@ -263,7 +276,10 @@ final class WorldMeta {
     if (head.n == 0) return null;
     final key = '$space/${head.digest}';
     final hit = _lru.remove(key);
-    if (hit != null) return _lru[key] = hit;
+    if (hit != null) {
+      _keepChip(space, head.n, hit.chip);
+      return _lru[key] = hit;
+    }
     final run = _running[key] ??= _load(space, head).whenComplete(() {
       // senza graffe whenComplete aspetterebbe il future rimosso: se stesso
       _running.remove(key);
@@ -271,7 +287,7 @@ final class WorldMeta {
     final s = await run;
     _lru.remove(key);
     _lru[key] = s;
-    _lastChip[space] = s.chip;
+    _keepChip(space, head.n, s.chip);
     while (_lru.length > _max) {
       _lru.remove(_lru.keys.first);
     }
