@@ -250,11 +250,12 @@ class _ServerCardState extends State<_ServerCard> {
         children: [
           Row(
             children: [
-              ServerTile(id: sp.id, iconUrl: serverIconUrl(app, sp.id, sp.head?.n)),
+              // alta quanto nome ed etichette accanto (28 + 4 + 20)
+              ServerTile(id: sp.id, size: 52, iconUrl: serverIconUrl(app, sp.id, sp.head?.n)),
               SizedBox(width: PixelScope.of(context).d(14)),
               Expanded(
                 child: MsStack(
-                  gap: 0,
+                  gap: 4,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     MsText.h3(sp.name, maxLines: 1),

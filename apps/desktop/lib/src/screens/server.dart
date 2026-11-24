@@ -159,7 +159,8 @@ class _Header extends StatelessWidget {
     final canSync = state.linked && !state.busy && app.connection == Connection.online;
     return Row(
       children: [
-        ServerTile(id: space.id, size: 64, iconUrl: serverIconUrl(app, space.id, space.head?.n)),
+        // alta quanto nome e chip accanto (32 + 8 + 36)
+        ServerTile(id: space.id, size: 76, iconUrl: serverIconUrl(app, space.id, space.head?.n)),
         SizedBox(width: g.d(20)),
         Expanded(
           child: MsStack(
