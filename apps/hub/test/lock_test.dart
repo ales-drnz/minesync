@@ -98,6 +98,42 @@ void main() {
       expect(File('${t.data}/spaces/$space/lock.json').statSync().mode & 0x3f, 0);
     });
 
+    test('B-LOCK-04 un lock che non rispondeva resta così dopo il riavvio', () async {
+      final tok = LockGrant.fromJson((await acquire()).json).token;
+      final lastBeat = t.clock.wallMs();
+      t.clock.advance(const Duration(seconds: 91));
+      t.hub.store.checkStaleLocks();
+      final file = File('${t.data}/spaces/$space/lock.json');
+      for (var i = 0; i < 100 && !file.readAsStringSync().contains('"stale"'); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect((jsonDecode(file.readAsStringSync()) as Map)['stale'], true);
+      int staleEvents() => t.hub.events.after(0).where((e) => e.type == 'stale').length;
+      expect(staleEvents(), 1);
+      t.clock.advance(const Duration(hours: 5));
+      await t.restart();
+      final l = LockHolder.fromJson((await t.get('/spaces/$space')).obj['lock']);
+      expect(l.stale, isTrue, reason: 'nessuna nuova grazia per chi taceva già');
+      expect(l.lastBeat, lastBeat, reason: 'il silenzio si conta dall\'ultimo battito vero');
+      t.hub.store.checkStaleLocks();
+      expect(staleEvents(), 1, reason: 'nessun nuovo annuncio');
+      expect((await acquire(as: 'bob', info: {'action': 'play'})).status, 200);
+      expect((await beat(tok)).code, 'lock_lost');
+    });
+
+    test('B-LOCK-04 chi riprende dopo il silenzio torna vivo anche dopo un riavvio', () async {
+      final tok = LockGrant.fromJson((await acquire()).json).token;
+      t.clock.advance(const Duration(seconds: 91));
+      t.hub.store.checkStaleLocks();
+      expect((await beat(tok)).status, 200);
+      final file = File('${t.data}/spaces/$space/lock.json');
+      expect((jsonDecode(file.readAsStringSync()) as Map).containsKey('stale'), isFalse);
+      await t.restart();
+      final l = LockHolder.fromJson((await t.get('/spaces/$space')).obj['lock']);
+      expect(l.stale, isFalse);
+      expect((await acquire(as: 'bob')).code, 'locked');
+    });
+
     test('B-LOCK-05 il token è l\'autorità, il nome un\'etichetta', () async {
       final tok = LockGrant.fromJson((await acquire()).json).token;
       t.resolver.byIp[ipOf['alice']!] = const Identity('a1a1a1a1a1', 'alice-renamed');

@@ -283,7 +283,7 @@ final class HubStore {
     final lock = await tryReadJsonFile('$dir/lock.json');
     if (lock != null) {
       try {
-        st.lock = LockState.fromJson(lock, clock);
+        st.lock = LockState.fromJson(lock, clock, options.lockTtl);
       } on FormatException catch (e) {
         _log('hub: ${meta.id}: lock.json illeggibile ($e), ignorato');
       }
@@ -1266,10 +1266,13 @@ final class HubStore {
     if (l == null || l.token != token) {
       throw const ApiError(ErrorCode.lockLost, 'the lock is no longer held by this session');
     }
+    final wasStale = l.staleNotified;
     l
       ..beat(clock)
       ..name = who.name;
-    var changed = info != null && jsonEncode(info.toJson()) != jsonEncode(l.info.toJson());
+    // tornato dopo un silenzio: il lock.json non deve più dirlo scaduto
+    var changed =
+        wasStale || info != null && jsonEncode(info.toJson()) != jsonEncode(l.info.toJson());
     if (info != null) l.info = info;
     // chi ospita può cambiare indirizzo (rete ZeroTier riconnessa)
     if (ip != null && ip != l.ip) {
@@ -1337,6 +1340,8 @@ final class HubStore {
       final l = st.lock;
       if (l == null || l.staleNotified || !l.isStale(clock, options.lockTtl)) continue;
       l.staleNotified = true;
+      // il riavvio dell'hub non deve rimetterlo vivo né riannunciarlo
+      unawaited(_persistLock(st));
       events.publish(
         EventType.stale,
         space: st.id,

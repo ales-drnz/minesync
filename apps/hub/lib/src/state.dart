@@ -2,6 +2,7 @@
 // sessioni di push. Le forme su disco (space.json, lock.json, pushes/*.json)
 // sono definite qui accanto alle classi.
 import 'dart:collection';
+import 'dart:math' show max;
 
 import 'package:ms_protocol/ms_protocol.dart';
 
@@ -84,14 +85,32 @@ final class LockState {
     this.ip,
   });
 
-  /// Dal lock.json salvato. Dopo un riavvio il tempo monotono riparte: il
-  /// lock riprende come appena rinnovato, così chi lo tiene ha un TTL intero
-  /// per rifarsi vivo.
-  factory LockState.fromJson(Object? j, Clock clock) {
+  /// Dal lock.json salvato. Dopo un riavvio il tempo monotono riparte: un
+  /// lock vivo riprende come appena rinnovato, così chi lo tiene ha un TTL
+  /// intero per rifarsi vivo; uno che non rispondeva già prima dello
+  /// spegnimento resta così, con il suo ultimo battito e senza un nuovo
+  /// evento `stale`.
+  factory LockState.fromJson(Object? j, Clock clock, Duration ttl) {
     if (j is! Map<String, Object?>) throw const FormatException('lock.json: atteso un oggetto');
     final token = j['token'], member = j['memberId'], name = j['name'], since = j['since'];
     if (token is! String || member is! String || name is! String || since is! int) {
       throw const FormatException('lock.json: campi mancanti');
+    }
+    final beat = j['lastBeat'];
+    if (j['stale'] == true && beat is int) {
+      // silenzio già oltre il TTL: la scadenza resta passata anche sul nuovo
+      // orologio monotono
+      final silent = max(ttl.inMilliseconds + 1, clock.wallMs() - beat);
+      return LockState(
+        token: token,
+        memberId: member,
+        name: name,
+        since: since,
+        lastBeat: beat,
+        lastBeatMono: clock.monoMs() - silent,
+        info: LockInfo.fromJson(j['info']),
+        ip: j['ip'] is String ? j['ip'] as String : null,
+      )..staleNotified = true;
     }
     return LockState(
       token: token,
@@ -157,6 +176,8 @@ final class LockState {
     'lastBeat': lastBeat,
     'info': info.toJson(),
     'ip': ?ip,
+    // non risponde già: lo resta dopo un riavvio dell'hub
+    if (staleNotified) 'stale': true,
   };
 }
 

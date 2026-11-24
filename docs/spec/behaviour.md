@@ -82,7 +82,7 @@ Concrete values (TTLs, limits, error codes) are part of the rule unless a rule s
 - **B-LOCK-01** `[core]` — Acquiring a free lock returns a lock with a secret session id and no takeover. A second acquirer gets a "locked" error carrying the holder's owner name, with the session id redacted.
 - **B-LOCK-02** `[core]` — Heartbeat and release with the wrong session id fail with a conflict while the lock is live; release with the right session clears the lock.
 - **B-LOCK-03** `[core]` — A lock whose last heartbeat is older than its TTL is stale: anyone may acquire it, and the acquisition reports the previous holder as taken over.
-- **B-LOCK-04** `[core]` — A held lock survives a hub restart (it is persisted).
+- **B-LOCK-04** `[core]` — A held lock survives a hub restart (it is persisted). A live lock restarts its TTL; a lock that was already stale before the restart stays stale with its last real heartbeat and is not announced again; a holder that resumed after being stale is live after a restart.
 - **B-LOCK-05** `[core]` — The session id is the authority, the name only a label: after the member is renamed, a heartbeat with the right session succeeds and updates the displayed owner; a push begun with the right session but a different author name succeeds and its commit updates the owner label; a wrong session still fails.
 - **B-LOCK-06** `[core]` — Lock timestamps are serialised in UTC (`…Z`), both in the store and in the heartbeat HTTP response.
 - **B-LOCK-07** `[core]` — Lock expiry is computed on a monotonic clock; if the wall clock goes backwards (last beat "in the future"), hosting statistics never become negative.
