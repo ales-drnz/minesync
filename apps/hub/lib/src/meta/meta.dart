@@ -48,6 +48,10 @@ final class WorldExtras {
     _events.live.where((e) => e.type == EventType.spaceDelete && e.space != null).listen((e) {
       world.forget(e.space!).ignore();
     });
+    // nuova versione: il riassunto si calcola subito, non alla prima lettura
+    _events.live
+        .where((e) => (e.type == EventType.push || e.type == EventType.restore) && e.space != null)
+        .listen((e) => world.warm(e.space!));
   }
 
   Future<void> close() async {

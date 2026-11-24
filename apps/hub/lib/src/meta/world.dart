@@ -115,6 +115,10 @@ final class WorldMeta {
   final void Function(String) _log;
   final _lru = <String, _Snap>{};
   final _running = <String, Future<_Snap>>{};
+
+  /// Ultimo riassunto calcolato per spazio: risponde mentre quello della
+  /// HEAD nuova è in calcolo.
+  final _lastChip = <String, WorldChip>{};
   final _icons = <String, Icon>{};
 
   bool _closed = false;
@@ -210,23 +214,31 @@ final class WorldMeta {
   }
 
   /// Riassunto per le card: dalla cache, senza aspettare. Se manca avvia il
-  /// calcolo in sottofondo e intanto restituisce null.
+  /// calcolo in sottofondo e intanto restituisce quello dell'ultima versione
+  /// calcolata (null solo se non ce n'è nessuna): dopo un salvataggio le card
+  /// non perdono versione di Minecraft e numero di mod.
   WorldChip? chip(String space, String digest) {
     if (digest == emptyDigest) return null;
     final key = '$space/$digest';
     final hit = _lru[key];
     if (hit != null) return hit.chip;
-    if (!_closed && !_running.containsKey(key)) {
-      unawaited(
-        _current(space).then<void>((_) {}, onError: (Object e) => _log('hub: mondo di $space: $e')),
-      );
-    }
-    return null;
+    warm(space);
+    return _lastChip[space];
+  }
+
+  /// Avvia in sottofondo il calcolo per la HEAD di [space] (dopo un
+  /// salvataggio, così è pronto per la prossima lettura).
+  void warm(String space) {
+    if (_closed) return;
+    unawaited(
+      _current(space).then<void>((_) {}, onError: (Object e) => _log('hub: mondo di $space: $e')),
+    );
   }
 
   /// Dimentica uno spazio cancellato (memoria e cache su disco).
   Future<void> forget(String space) async {
     _lru.removeWhere((k, _) => k.startsWith('$space/'));
+    _lastChip.remove(space);
     try {
       await Directory('$cacheDir/$space').delete(recursive: true);
     } on FileSystemException {
@@ -259,6 +271,7 @@ final class WorldMeta {
     final s = await run;
     _lru.remove(key);
     _lru[key] = s;
+    _lastChip[space] = s.chip;
     while (_lru.length > _max) {
       _lru.remove(_lru.keys.first);
     }

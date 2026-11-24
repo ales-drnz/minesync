@@ -235,6 +235,24 @@ void main() {
       expect(s.world?.loader, Loader.fabric);
     });
 
+    test('B-META-06 dopo un salvataggio il riassunto non sparisce e si aggiorna da solo', () async {
+      Future<WorldChip?> chip() async => SpaceSummary.fromJson(
+        ((await t.get('/spaces')).obj['spaces']! as List<Object?>).first,
+      ).world;
+      await t.push(space, worldFiles());
+      await t.get('/spaces/$space/world');
+      expect((await chip())?.mods, 3);
+      final files = worldFiles()..['mods/extra.jar'] = fabricJar(version: '9.9.9');
+      expect((await t.push(space, files)).status, 200);
+      // subito dopo: quello della versione prima, mai null
+      expect((await chip())?.mods, anyOf(3, 4));
+      // senza che nessuno legga /world: calcolato dopo il salvataggio
+      for (var i = 0; i < 200 && (await chip())?.mods != 4; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect((await chip())?.mods, 4);
+    });
+
     test('giocatori: unione di stats, ops e whitelist; online dal lock play', () async {
       await t.push(space, worldFiles());
       final tok = t.tokens['$space/alice']!;

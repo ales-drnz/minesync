@@ -282,6 +282,7 @@ Concrete values (TTLs, limits, error codes) are part of the rule unless a rule s
 - **B-META-03** `[hub-extra]` — Fabric mod jars (`fabric.mod.json`): loader `fabric`, authors as strings or objects joined with `, `, `contact.homepage`, icon extractable.
 - **B-META-04** `[hub-extra]` — The NBT parser never panics or allocates disproportionately on arbitrary input; a list declaring more elements than the remaining bytes is rejected; the total node count is capped (300 000 single-byte nodes are rejected); a valid level still parses.
 - **B-META-05** `[hub-extra]` — Mod homepages keep only `http`/`https` URLs (trimmed); `javascript:` (any case), `data:`, protocol-relative and `ftp:` become empty.
+- **B-META-06** `[hub-extra]` — The world chip of a space summary (Minecraft version, loader, mod count) is computed in the background when a new version arrives; until it is ready the summary keeps the chip of the last computed version instead of none.
 
 ## DL — client downloads
 
