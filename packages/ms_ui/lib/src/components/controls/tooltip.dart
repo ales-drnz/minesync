@@ -156,19 +156,29 @@ class _MsTooltipState extends State<MsTooltip> {
         link: _link,
         child: OverlayPortal(
           controller: _portal,
-          overlayChildBuilder: (context) => CompositedTransformFollower(
-            link: _link,
-            showWhenUnlinked: false,
-            targetAnchor: Alignment.topLeft,
-            followerAnchor: Alignment.bottomLeft,
-            offset: Offset(0, -g.d(4)),
-            child: Align(
-              alignment: Alignment.bottomLeft,
-              child: IgnorePointer(
-                child: MsTooltipBubble(message: widget.message, shortcut: widget.shortcut),
+          overlayChildBuilder: (overlay) {
+            // dentro la finestra: nella metà destra si allinea al bordo destro
+            // del pulsante e si apre verso sinistra; senza spazio sopra va sotto
+            final box = context.findRenderObject() as RenderBox?;
+            final screen = MediaQuery.sizeOf(overlay);
+            final pos = box != null && box.hasSize ? box.localToGlobal(Offset.zero) : Offset.zero;
+            final right = box != null && pos.dx + box.size.width / 2 > screen.width / 2;
+            final below = pos.dy < g.d(48);
+            final x = right ? 1.0 : -1.0;
+            return CompositedTransformFollower(
+              link: _link,
+              showWhenUnlinked: false,
+              targetAnchor: Alignment(x, below ? 1 : -1),
+              followerAnchor: Alignment(x, below ? -1 : 1),
+              offset: Offset(0, below ? g.d(4) : -g.d(4)),
+              child: Align(
+                alignment: Alignment(x, below ? -1 : 1),
+                child: IgnorePointer(
+                  child: MsTooltipBubble(message: widget.message, shortcut: widget.shortcut),
+                ),
               ),
-            ),
-          ),
+            );
+          },
           child: Focus(
             canRequestFocus: false,
             skipTraversal: true,

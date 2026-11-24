@@ -378,18 +378,26 @@ class _Detail extends StatelessWidget {
           // il messaggio della versione così com'è, non in maiuscolo come
           // l'etichetta della testata
           MsText.h3(title),
-          // chi, quando, quanto e da dove in una riga sola
-          MsRow(
-            gap: 8,
+          // chi, e sotto il nome quando, quanto e da dove
+          Row(
             children: [
               MsAvatar(gen.author),
-              MsText(gen.author, weight: 600),
-              MsMeta([
-                f.whenLong(app.localTime(gen.ts), app.now()),
-                f.size(gen.stats.size),
-                s.filesN(gen.stats.files),
-                gen.parent > 0 ? s.fromN(gen.parent) : s.firstVersion,
-              ]),
+              SizedBox(width: PixelScope.of(context).d(12)),
+              Expanded(
+                child: MsStack(
+                  gap: 4,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    MsText(gen.author, weight: 700),
+                    MsMeta([
+                      f.whenLong(app.localTime(gen.ts), app.now()),
+                      f.size(gen.stats.size),
+                      s.filesN(gen.stats.files),
+                      gen.parent > 0 ? s.fromN(gen.parent) : s.firstVersion,
+                    ]),
+                  ],
+                ),
+              ),
             ],
           ),
           // con la colonna alta quanto la finestra, i file arrivano al fondo
