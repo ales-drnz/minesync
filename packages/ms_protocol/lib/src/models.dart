@@ -125,6 +125,7 @@ final class LockInfo {
     this.port,
     this.address,
     this.lan,
+    this.ready,
   });
 
   factory LockInfo.fromJson(Object? j) {
@@ -137,6 +138,7 @@ final class LockInfo {
       port: m['port'] as int?,
       address: m['address'] as String?,
       lan: optStr(m, 'lan'),
+      ready: m['ready'] as bool?,
     );
   }
 
@@ -153,10 +155,22 @@ final class LockInfo {
   /// lo tiene per sé e non lo restituisce mai nelle risposte.
   final String? lan;
 
+  /// Il server accetta giocatori (`play`): false mentre parte o riparte dopo
+  /// un crash, null se il client non lo dice (versioni vecchie). L'hub prova
+  /// la porta solo da quando è vero.
+  final bool? ready;
+
   /// Copia senza l'indirizzo LAN, come la serve l'hub.
   LockInfo public() => lan == null
       ? this
-      : LockInfo(client: client, action: action, players: players, port: port, address: address);
+      : LockInfo(
+          client: client,
+          action: action,
+          players: players,
+          port: port,
+          address: address,
+          ready: ready,
+        );
 
   Map<String, Object?> toJson() => {
     'client': client,
@@ -165,6 +179,7 @@ final class LockInfo {
     if (port != null) 'port': port,
     if (address != null) 'address': address,
     if (lan != null) 'lan': lan,
+    'ready': ?ready,
   };
 }
 

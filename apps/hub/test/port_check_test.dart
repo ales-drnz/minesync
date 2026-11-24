@@ -108,6 +108,21 @@ void main() {
       expect(r.calls, hasLength(18));
     });
 
+    test('B-SESSION-31 server che parte o va in crash: nessuna prova né «bloccata»', () async {
+      final l = r.lock('s1');
+      l.info = const LockInfo(client: 'test', action: 'play', ready: false);
+      await r.run(const Duration(minutes: 5));
+      expect(r.calls, isEmpty);
+      expect(r.events, isEmpty, reason: 'un crash non è una porta chiusa');
+      expect(r.state('s1'), PortState.pending);
+      // pronto: la finestra comincia adesso
+      l.info = const LockInfo(client: 'test', action: 'play', ready: true);
+      r.answer = (_, _) async => true;
+      await r.run(const Duration(seconds: 1));
+      expect(r.state('s1'), PortState.reachable);
+      expect(r.events, ['s1 reachable 25565']);
+    });
+
     test('lock di solo push o prova spenta: off, nessuna connessione', () async {
       r.lock('p', action: 'push');
       r.lock('s1');

@@ -252,8 +252,12 @@ final class Session {
 
   void _setState(SessionState s) {
     if (_state == s) return;
+    final wasReady = _state == SessionState.running || _state == SessionState.saving;
     _state = s;
     _emit(StateChanged(s));
+    // pronto o non più pronto: l'hub lo sa subito (prova della porta)
+    final ready = s == SessionState.running || s == SessionState.saving;
+    if (ready != wasReady) _keeper?.beatNow();
   }
 
   LockInfo _info() => LockInfo(
@@ -262,12 +266,30 @@ final class Session {
     players: _players.toList(),
     port: port,
     address: address,
+    // la porta si prova solo con il server in ascolto (non mentre parte o
+    // riparte dopo un crash)
+    ready: _state == SessionState.running || _state == SessionState.saving,
   );
 
   /// Esegue l'intera sessione. Restituisce quando è finita; lancia se non è
   /// potuta partire (lock di un altro, modifiche locali divergenti...).
   Future<void> run({bool discardLocal = false}) async {
     _setState(SessionState.syncing);
+    // modifiche locali divergenti: si scopre prima di prendere il lock, che
+    // altrimenti verrebbe preso e rilasciato (una partita fantasma per
+    // l'hub). Con un'istantanea in attesa decide il giro normale.
+    if (!discardLocal && engine.state.loadPending(_space) == null) {
+      try {
+        await engine.checkPull();
+      } on SyncException catch (e) {
+        if (e.kind == SyncErrorKind.dirtyLocal && e.diverged) {
+          _setState(SessionState.failed);
+          rethrow;
+        }
+      } on Object {
+        // hub irraggiungibile o altro: lo dirà il giro normale
+      }
+    }
     try {
       _lock = await _client.acquireLock(_space, _info());
     } on Object {

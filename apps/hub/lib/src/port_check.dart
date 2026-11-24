@@ -138,6 +138,15 @@ final class PortChecker {
         }
         continue;
       }
+      // server che parte o riparte dopo un crash: la finestra comincia quando
+      // è in ascolto (un client vecchio non lo dice: si prova subito)
+      if (l.info.ready == false) {
+        _probes.remove(id);
+        if (l.portCheck?.state != PortState.pending) {
+          l.portCheck = PortCheck(state: PortState.pending, port: port);
+        }
+        continue;
+      }
       var p = _probes[id];
       // lock nuovo, porta o indirizzo cambiati: la finestra riparte
       if (p == null || !identical(p.lock, l) || p.port != port || p.ip != l.ip) {

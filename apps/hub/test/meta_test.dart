@@ -531,6 +531,30 @@ void main() {
       expect(s.sessions.length, 2);
     });
 
+    test(
+      'B-LOCK-04 hosting: chi non risponde conta fino all\'ultimo battito, anche dopo riavvii',
+      () async {
+        await play();
+        t.clock.advance(const Duration(seconds: 60));
+        // l'app sparisce: niente più battiti, poi il lock scade
+        t.clock.advance(const Duration(seconds: 91));
+        t.hub.store.checkStaleLocks();
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        // l'hub riparte due volte mentre nessuno lo libera
+        for (var i = 0; i < 2; i++) {
+          t.clock.advance(const Duration(hours: 10));
+          await t.restart();
+        }
+        t.clock.advance(const Duration(hours: 1));
+        await play(as: 'bob');
+        final s = await stats();
+        final alice = s.sessions.firstWhere((x) => x.name == 'alice');
+        expect(alice.ended, SessionEnd.stale);
+        expect(alice.end! - alice.start, 0, reason: 'nessun battito dopo la presa');
+        expect(s.hosting.firstWhere((h) => h.name == 'alice').ms, lessThan(60000));
+      },
+    );
+
     test('spazio cancellato: sessioni dimenticate', () async {
       final tok = await play();
       await t.req('DELETE', '/spaces/$space/lock', body: {'token': tok});

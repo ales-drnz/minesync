@@ -305,7 +305,7 @@ Concrete values (TTLs, limits, error codes) are part of the rule unless a rule s
 ## SESSION — Minecraft session
 
 - **B-SESSION-01** `[session]` — At session start, non-diverged local changes (e.g. last final push failed) are pushed before the pull; the hub gets them as a new generation and the local file is kept.
-- **B-SESSION-02** `[session]` — At session start, diverged local changes stop the session with the dirty-local error and the hub is untouched; with "discard local" the session backs them up, takes the hub version and continues.
+- **B-SESSION-02** `[session]` — At session start, diverged local changes stop the session with the dirty-local error and the hub is untouched; with "discard local" the session backs them up, takes the hub version and continues. The divergence is detected before the lock is taken, so the hub records no session.
 - **B-SESSION-03** `[session]` — Lock stolen during a session → blocking alert and a stop request; 409s after a voluntary release are not a lost lock.
 - **B-SESSION-04** `[session]` — Autosave with a slow uplink: `save-on` is sent right after the snapshot (within 3 s of `save-all flush`), not after the upload; no new `save-off` starts during the upload (ticks are skipped); the console stays responsive; the saved event's hub time is the snapshot time; the next cycle starts after the upload; at stop every `save-off` has a matching `save-on`.
 - **B-SESSION-05** `[session]` — A manual save requested during an upload is queued ("already saving") and does not overlap; stop during a slow upload cancels it, the final push from the real files reaches the hub, the session closes promptly, and the cancelled autosave is not reported as saved.
@@ -334,6 +334,7 @@ Concrete values (TTLs, limits, error codes) are part of the rule unless a rule s
 - **B-SESSION-28** `[session]` — A Java runtime inside the synced folder (chosen manually or bundled in the pack) is never executed before Play: it is reported found but unverified.
 - **B-SESSION-29** `[session]` — Java preview picks the detected runtime matching the required major (17 for 1.20.1 even if 21 is listed first). Path containment check works on cleaned paths (`dir+"x"` is not inside `dir`).
 - **B-SESSION-30** `[session]` — When a save or its upload fails because the hub is unreachable, the session probes the hub every few seconds without touching the server and, as soon as it answers, uploads the pending snapshot (or takes a new one) instead of waiting for the next autosave.
+- **B-SESSION-31** `[session]` — The `play` lock says `ready: true` only while the server accepts players (running or saving) and `false` while it starts or restarts after a crash; a change is sent with an immediate heartbeat. The hub does not run or conclude the port test while `ready` is false, so a crash loop is never announced as a closed port.
 
 ## I18N — localisation
 
@@ -361,6 +362,7 @@ Concrete values (TTLs, limits, error codes) are part of the rule unless a rule s
 - **B-UI-13** `[ui]` — The activity feed strips the stats tail from push events and badges unlock events as "stop".
 - **B-UI-14** `[ui]` — The "server struggling" indicator turns off once lag warnings leave the time window.
 - **B-UI-15** `[ui]` — The hub connection status is decided by reachability alone; a failed identity lookup is retried, and a result from a superseded connection is ignored.
+- **B-UI-16** `[ui]` — Prepared mod changes and the "apply when the server is free" queue are kept on disk with the pack they were made on: they survive closing the app, are restored only if the pack is still the same, and the file disappears once the changes are applied or discarded.
 
 ## Additional rules
 

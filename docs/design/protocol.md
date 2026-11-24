@@ -176,7 +176,11 @@ treated as referenced by GC while it is open.
 - An expired lock is *stale*: anyone may take it. Taking a live lock held by
   someone else needs `force: true` and admin rights.
 - `info` carries what the hub shows: client version, players online, game
-  port, address. It is updated by heartbeats.
+  port, address. It is updated by heartbeats. `ready` (optional) tells
+  whether the server accepts players: a `play` session sends `false` while
+  the server starts or restarts after a crash and beats at once when it
+  changes; the port test window starts only when it is `true` (absent: old
+  clients, tested at once).
 - The lock lives in memory under the space's mutex; `lock.json` only lets it
   survive a hub restart.
 

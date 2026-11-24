@@ -59,6 +59,10 @@ final class LockKeeper {
     }
   }
 
+  /// Un battito subito (le informazioni del lock sono cambiate), senza
+  /// aspettare il prossimo.
+  void beatNow() => unawaited(_beat());
+
   /// Ferma i battiti. Idempotente; non è una perdita del lock.
   void stop() {
     _stopped = true;

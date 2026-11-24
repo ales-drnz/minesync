@@ -131,7 +131,20 @@ final class SyncEngine {
   // --- pull -------------------------------------------------------------------
 
   /// Porta la cartella alla testa dell'hub.
-  Future<PullResult> pull({bool discardLocal = false, CancelToken? cancel}) async {
+  Future<PullResult> pull({bool discardLocal = false, CancelToken? cancel}) async =>
+      (await _pull(discardLocal: discardLocal, cancel: cancel))!;
+
+  /// Il controllo del pull senza scaricare né toccare file: lancia la stessa
+  /// [SyncException] `dirtyLocal` che lancerebbe [pull] (modifiche locali da
+  /// non perdere). Non serve il lock: la sessione lo usa prima di prenderlo,
+  /// così un conflitto non lascia nella Storia una partita mai iniziata.
+  Future<void> checkPull() => _pull(checkOnly: true);
+
+  Future<PullResult?> _pull({
+    bool discardLocal = false,
+    CancelToken? cancel,
+    bool checkOnly = false,
+  }) async {
     final ct = cancel ?? CancelToken();
     final details = await _api(() => client.space(space));
     final headSummary = details.summary.head;
@@ -209,8 +222,9 @@ final class SyncEngine {
           message: 'unpushed local changes',
         );
       }
-      backup = await _backup(atRisk);
+      if (!checkOnly) backup = await _backup(atRisk);
     }
+    if (checkOnly) return null;
 
     // Piano: cancellazioni, scritture, solo permessi.
     final skipped = scan.skipped.toSet();

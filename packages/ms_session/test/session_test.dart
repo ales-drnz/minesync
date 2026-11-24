@@ -165,6 +165,8 @@ void main() {
     expect(info['action'], 'play');
     expect(info['port'], 25565);
     expect(info['players'], ['alice']);
+    // in ascolto: l'hub può provare la porta (prima, mentre partiva, no)
+    expect(info['ready'], true);
     await s.stop();
     await run;
   });
@@ -427,11 +429,15 @@ void main() {
     await client.releaseLock(space, lock.token);
     hub.commitDirect(space, {'a.txt': utf8.encode('di bob')});
     putLocal('a.txt', 'mio');
+    final locksBefore = hub.calls['POST spaces/lock'] ?? 0;
     await expectLater(
       session().run(),
       throwsA(isA<SyncException>().having((e) => e.kind, 'kind', SyncErrorKind.dirtyLocal)),
     );
     expect(hub.head(space)!.n, 2);
+    // scoperto prima di prendere il lock: per l'hub nessuna partita
+    expect(hub.calls['POST spaces/lock'] ?? 0, locksBefore);
+    expect(File('${root()}/a.txt').readAsStringSync(), 'mio');
     final s = session();
     final run = s.run(discardLocal: true);
     await until<StateChanged>(
