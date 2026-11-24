@@ -381,7 +381,8 @@ class _GenerationRow extends StatelessWidget {
           gap: 8,
           children: [
             MsText(h.title(g), weight: 700),
-            if (head) const MsChip('HEAD', tone: MsChipTone.accent),
+            // come nell'app: «Attuale», non il termine tecnico
+            if (head) MsPill(h.current, tone: MsStatusTone.ok),
             if (g.restoredFrom != null)
               MsChip(
                 g.restoredPath == null

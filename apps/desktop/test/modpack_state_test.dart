@@ -260,6 +260,44 @@ void main() {
     expect(notes.shown.map((n) => n.$2), contains(contains('applicazione')));
   });
 
+  test('modifiche preparate e coda sopravvivono alla chiusura dell\'app', () async {
+    put('mods/create-6.0.6.jar', fakeJar('create-6.0.6.jar'));
+    final mp = app.modpack(id);
+    await mp.load();
+    final other = HubClient(Uri.parse('http://127.0.0.1:${hub.port}/'));
+    addTearDown(other.close);
+    await other.acquireLock(id, const LockInfo(client: 'test', action: 'play'));
+    await app.refreshSpaces();
+    mp
+      ..toggle('mr:$_create')
+      ..queueApply(true);
+    final count = mp.changeCount;
+    expect(mp.queued, isTrue);
+    // la stessa configurazione riaperta (app chiusa e riaperta)
+    final again = AppState(
+      AppDeps(
+        configDir: '${tmp.path}/config',
+        platform: PlatformServices.inert(),
+        pollEvery: const Duration(milliseconds: 300),
+        retryEvery: const Duration(milliseconds: 200),
+        env: {'HOME': tmp.path},
+        modpack: fakeModpackEnv(transport: transport, tools: tools),
+      ),
+    );
+    addTearDown(again.dispose);
+    await again.connectTo('127.0.0.1:${hub.port}');
+    again.localProbe = app.localProbe;
+    final mp2 = again.modpack(id);
+    await again.spaceState(id).refresh();
+    await mp2.load();
+    expect(mp2.changeCount, count);
+    expect(mp2.queued, isTrue);
+    expect(mp2.draft!.byKey('mr:$_create')!.disabled, isTrue);
+    // annullate: il file sparisce e un'altra riapertura parte pulita
+    mp2.discard();
+    expect(File(p.join(tmp.path, 'config', 'modpack', '$id.draft.json')).existsSync(), isFalse);
+  });
+
   test('aggiornamenti: «Aggiorna tutte» mette la versione nuova nelle modifiche', () async {
     put('mods/create-6.0.6.jar', fakeJar('create-6.0.6.jar'));
     final mp = app.modpack(id);

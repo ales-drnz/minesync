@@ -14,6 +14,9 @@ abstract final class HistoryStrings {
   String count(int n);
   String lead(String logical, String referenced);
   String get search;
+
+  /// La versione attuale (la testa), come nell'app.
+  String get current;
   String get searchLabel;
   String get filterLabel;
   String get filterAll;
@@ -111,6 +114,8 @@ final class _It implements HistoryStrings {
       "$logical in totale, $referenced occupati sull'hub (i file identici sono salvati una sola volta)";
   @override
   String get search => 'Cerca per messaggio, autore, #N';
+  @override
+  String get current => 'Attuale';
   @override
   String get searchLabel => 'Cerca nella storia';
   @override
@@ -292,6 +297,8 @@ final class _En implements HistoryStrings {
       '$logical in total, $referenced used on the hub (identical files are stored once)';
   @override
   String get search => 'Search by message, author, #N';
+  @override
+  String get current => 'Current';
   @override
   String get searchLabel => 'Search the history';
   @override

@@ -321,6 +321,19 @@ class _ServerCardState extends State<_ServerCard> {
                   ),
                 details,
               ],
+              // la propria sessione rimasta appesa: si riprende da qui, come
+              // nella pagina del server
+              LockView.stale when l!.memberId == app.me?.id => [
+                MsButton(
+                  label: sv.resume,
+                  variant: MsButtonVariant.warn,
+                  icon: const MsIcon(MsIcons.play),
+                  onPressed: app.connection == Connection.online
+                      ? () => startPlay(app, sp.id, force: true)
+                      : null,
+                ),
+                details,
+              ],
               LockView.stale => [
                 MsButton(
                   label: s.whatToDo,

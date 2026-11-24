@@ -269,18 +269,22 @@ void main() {
     }
   });
 
-  testWidgets('barra delle modifiche: pulsanti andati a capo allineati a destra', (t) async {
-    var wrapped = 0;
-    for (var w = 700.0; w <= 1400; w += 25) {
+  testWidgets('barra delle modifiche: tre pulsanti su una riga, modifiche sotto il conteggio', (
+    t,
+  ) async {
+    for (final w in [1280.0, 1440.0]) {
       await pumpApp(t, modState(space: 'survival'), size: Size(w, 900));
+      final discard = t.getRect(msButton('Annulla le modifiche'));
       final when = t.getRect(msButton('Applica quando bob chiude'));
       final apply = t.getRect(msButton('Applica e carica sull\'hub'));
-      if (apply.top > when.top + 1) {
-        wrapped++;
-        expect(apply.right, closeTo(when.right, .5), reason: 'larghezza $w');
-      }
+      expect(when.top, discard.top, reason: 'larghezza $w');
+      expect(apply.top, discard.top, reason: 'larghezza $w');
+      expect(discard.right, lessThan(when.left));
+      expect(when.right, lessThan(apply.left));
+      final count = t.getRect(msText('3 modifiche da applicare'));
+      final chips = t.getRect(find.byWidgetPredicate((x) => x is MsMeta && x.maxLines == 1).last);
+      expect(chips.top, greaterThan(count.bottom - 1), reason: 'chip sotto il conteggio');
     }
-    expect(wrapped, greaterThan(0), reason: 'nessuna larghezza con i pulsanti su due righe');
   });
 
   testWidgets('filtro «Solo server»: solo le mod che i giocatori non scaricano', (t) async {

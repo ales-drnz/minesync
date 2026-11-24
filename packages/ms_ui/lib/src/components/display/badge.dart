@@ -146,8 +146,8 @@ double _shapeWidth(MsStatusTone t) => switch (t) {
   _ => 8,
 };
 
-/// Pillola di stato (`.ms-pill`): forma pixel + testo, contorno nel colore
-/// del tono su --ms-panel; [solid] la riempie del colore del tono.
+/// Pillola di stato (`.ms-pill`): forma pixel + testo nel colore del tono,
+/// contorno neutro su --ms-panel; [solid] la riempie del colore del tono.
 class MsPill extends StatelessWidget {
   const MsPill(this.label, {super.key, this.tone = MsStatusTone.neutral, this.solid = false});
 
@@ -177,7 +177,9 @@ class MsPill extends StatelessWidget {
       repaintKey: (tone, solid, plain, c),
       painter: (p, w, h) {
         if (plain) return;
-        p.ring(0, 0, w, h, tint);
+        // contorno neutro come MsLock: il colore del tono sta nella forma e
+        // nel testo (piena: anche nel fondo)
+        p.ring(0, 0, w, h, solid ? tint : c.pxOutline);
         p.rect(0, 0, w, h, bg);
       },
       child: Row(
@@ -413,7 +415,9 @@ class _MsLockState extends State<MsLock> {
       painter: (p, w, h) {
         switch (state) {
           case MsLockState.free:
-            p.ring(0, 0, w, h, tint);
+            // contorno neutro come «in gioco»: il colore sta nel quadratino
+            // e nel testo, non in un bordo verde
+            p.ring(0, 0, w, h, c.pxOutline);
             p.rect(0, 0, w, h, bg);
           case MsLockState.play:
             p.ring(0, 0, w, h, c.pxOutline);

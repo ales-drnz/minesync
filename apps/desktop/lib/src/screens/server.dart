@@ -351,6 +351,8 @@ class _OtherPanel extends StatelessWidget {
           ? null
           : MsButton(
               label: s.copy,
+              // alto quanto l'azione principale accanto
+              size: MsButtonSize.lg,
               icon: const MsIcon(MsIcons.copy),
               semanticLabel: s.copyAddressLabel(address),
               onPressed: () => copyText(context, address, s.copied),
@@ -406,6 +408,7 @@ class _StalePanel extends StatelessWidget {
       text: s.staleText(f.clockOn(beat, now), f.otherDay(beat, now) ? null : f.ago(beat, now)),
       secondary: MsButton(
         label: s.wait(l.name),
+        size: MsButtonSize.lg,
         variant: MsButtonVariant.ghost,
         icon: const MsIcon(MsIcons.clock),
         onPressed: () async {

@@ -42,7 +42,7 @@ void main() {
     await settle(t);
     expect(msText('41 versioni'), findsOneWidget);
     expect(msTextContaining('18 GB in totale, 6,0 GB occupati sull\'hub'), findsOneWidget);
-    expect(find.byWidgetPredicate((w) => w is MsChip && w.label == 'HEAD'), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is MsPill && w.label == 'Attuale'), findsOneWidget);
     expect(
       find.byWidgetPredicate((w) => w is MsChip && w.label == 'ripristino di #37'),
       findsOneWidget,

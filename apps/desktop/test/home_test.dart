@@ -196,6 +196,34 @@ void main() {
     expect(s.route, const ServerRoute('creativo'));
   });
 
+  testWidgets('la propria sessione rimasta appesa: «Riprendi» anche nella card', (t) async {
+    final s = homeState();
+    s.debugSet(
+      spaces: [
+        for (final sp in homeSpaces())
+          sp.id == 'avventura'
+              ? SpaceSummary(
+                  id: sp.id,
+                  name: sp.name,
+                  profile: sp.profile,
+                  createdAt: sp.createdAt,
+                  head: sp.head,
+                  lock: LockHolder.fromJson({
+                    ...sp.lock!.toJson(),
+                    'memberId': sampleMe.id,
+                    'name': sampleMe.name,
+                  }),
+                )
+              : sp,
+      ],
+    );
+    await pumpApp(t, s);
+    await t.pump();
+    expect(msButton('Riprendi'), findsOneWidget);
+    expect(msButton('Cosa fare'), findsNothing);
+    expect(find.byWidgetPredicate((w) => w is MsLock && w.meta == 'tu'), findsOneWidget);
+  });
+
   testWidgets('avvisi: disco dell\'hub quasi pieno, offline con riprova', (t) async {
     final s = homeState();
     await pumpApp(t, s);

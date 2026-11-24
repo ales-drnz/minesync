@@ -209,7 +209,7 @@ void main() {
     // forzare (admin) sta nel menu «Altro»
     await t.tap(msButton('Altro'));
     await t.pump();
-    expect(find.bySemanticsLabel('Forza e gioca… (admin)'), findsOneWidget);
+    expect(find.bySemanticsLabel('Forza e gioca (admin)'), findsOneWidget);
     await t.sendKeyEvent(LogicalKeyboardKey.escape);
     await t.pump();
     // al posto del Gioca spento: «Avvisa quando è libero»
@@ -222,7 +222,7 @@ void main() {
     await pumpApp(t, m);
     await t.tap(msButton('Altro'));
     await t.pump();
-    expect(find.bySemanticsLabel('Forza e gioca… (admin)'), findsNothing);
+    expect(find.bySemanticsLabel('Forza e gioca (admin)'), findsNothing);
   });
 
   testWidgets('la propria sessione rimasta appesa: «Riprendi», senza conferme', (t) async {
@@ -253,7 +253,7 @@ void main() {
     await pumpApp(t, s);
     expect(msText('La tua sessione precedente non risponde'), findsWidgets);
     expect(msButton('Riprendi'), findsOneWidget);
-    expect(msButton('Forza e gioca…'), findsNothing);
+    expect(msButton('Forza e gioca'), findsNothing);
   });
 
   testWidgets('stale: ore di oggi senza giorno, di un altro giorno con il giorno', (t) async {
@@ -291,7 +291,7 @@ void main() {
     expect(msText('tutto fino alle 12:00 di ieri, salvato da bob'), findsOneWidget);
     expect(msText('gli ultimi minuti di gioco dopo le 12:00 di ieri'), findsOneWidget);
     // anche nelle due conferme per forzare
-    await t.tap(msButton('Forza e gioca…'));
+    await t.tap(msButton('Forza e gioca'));
     await t.pump(const Duration(seconds: 1));
     expect(msText('tutto fino all\'ultimo salvataggio, delle 12:00 di ieri'), findsOneWidget);
     await t.tap(msButton('Continua…'));
@@ -323,7 +323,7 @@ void main() {
     final s = serverState(route: 'avventura');
     await pumpApp(t, s);
     expect(msText('L\'app di carol non risponde'), findsWidgets);
-    await t.tap(msButton('Forza e gioca…'));
+    await t.tap(msButton('Forza e gioca'));
     await t.pump(const Duration(seconds: 1));
     expect(msText('Liberare Avventura?'), findsOneWidget);
     await t.tap(msButton('Continua…'));

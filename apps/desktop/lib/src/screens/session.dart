@@ -483,7 +483,7 @@ class _SessionScreenState extends State<SessionScreen> {
               TableRow(
                 children: [
                   Padding(
-                    padding: EdgeInsets.only(right: g.d(16), bottom: g.d(14)),
+                    padding: EdgeInsets.only(right: g.d(16)),
                     child: cell(
                       t.onHub,
                       uploading
@@ -493,29 +493,14 @@ class _SessionScreenState extends State<SessionScreen> {
                           : t.onHubValue(t.ago(now.difference(saved.at)), hhmm(saved.at)),
                     ),
                   ),
-                  Padding(
-                    padding: EdgeInsets.only(bottom: g.d(14)),
-                    child: cell(
-                      t.nextSave,
-                      next == null ? '—' : t.inTime(mmss(next.difference(now))),
-                    ),
-                  ),
-                ],
-              ),
-              TableRow(
-                children: [
-                  Padding(
-                    padding: EdgeInsets.only(right: g.d(16)),
-                    child: cell(
-                      t.autostopTerm,
-                      s.autostop ? t.autostopValue(after) : t.autostopOff,
-                    ),
-                  ),
-                  const SizedBox.shrink(),
+                  cell(t.nextSave, next == null ? '—' : t.inTime(mmss(next.difference(now)))),
                 ],
               ),
             ],
           ),
+          // a tutta larghezza: in una colonna della tabella «30 min senza
+          // giocatori» andava a capo con lo spazio accanto vuoto
+          cell(t.autostopTerm, s.autostop ? t.autostopValue(after) : t.autostopOff),
           if (uploading)
             MsStack(
               gap: 4,
@@ -568,21 +553,23 @@ class _SessionScreenState extends State<SessionScreen> {
           : MsStack(
               gap: 10,
               children: [
+                // l'indirizzo nel riquadro, «Copia» accanto e alto uguale;
                 // l'indirizzo non si spezza a metà: se non c'è spazio il
                 // pulsante va sotto
-                MsSlot(
-                  child: MsRow(
-                    children: [
-                      MsText.mono(main, weight: 700),
-                      MsButton(
-                        label: t.copy,
-                        size: MsButtonSize.sm,
-                        icon: const MsIcon(MsIcons.copy),
-                        semanticLabel: t.copyAddress(main),
-                        onPressed: () => _copy(main),
-                      ),
-                    ],
-                  ),
+                MsRow(
+                  gap: 8,
+                  children: [
+                    // 44 px come il pulsante quadrato accanto
+                    MsSlot(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                      child: MsText.mono(main, weight: 700),
+                    ),
+                    MsButton.icon(
+                      icon: const MsIcon(MsIcons.copy),
+                      semanticLabel: t.copyAddress(main),
+                      onPressed: () => _copy(main),
+                    ),
+                  ],
                 ),
                 if (ja.fixed != null && ja.direct != null)
                   MsRow(
@@ -594,7 +581,6 @@ class _SessionScreenState extends State<SessionScreen> {
                         icon: const MsIcon(MsIcons.copy),
                         semanticLabel: t.copyDirectIp,
                         size: MsButtonSize.sm,
-                        variant: MsButtonVariant.ghost,
                         onPressed: () => _copy(ja.direct!),
                       ),
                     ],
@@ -729,10 +715,11 @@ class _SessionScreenState extends State<SessionScreen> {
             ),
           ),
           if (q.isNotEmpty) MsText.small(t.results(matches), tabular: true),
+          // pulsante quadrato alto quanto il campo di ricerca accanto
           MsButton.icon(
             icon: const MsIcon(MsIcons.copy),
             semanticLabel: t.copyLog,
-            variant: MsButtonVariant.ghost,
+            size: MsButtonSize.sm,
             onPressed: () => _copy(MsConsole.plainText(lines)),
           ),
         ],

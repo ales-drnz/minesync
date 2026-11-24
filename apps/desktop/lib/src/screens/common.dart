@@ -221,7 +221,12 @@ Widget lockBadge(BuildContext context, SpaceSummary sp, {bool big = false}) {
     LockView.free => MsLock(label: s.lockFree, big: big),
     LockView.play => MsLock(label: s.lockPlay, state: MsLockState.play, meta: l!.name, big: big),
     LockView.mine => MsLock(label: s.lockPlay, state: MsLockState.play, meta: s.you, big: big),
-    LockView.stale => MsLock(label: s.lockStale, state: MsLockState.stale, meta: l!.name, big: big),
+    LockView.stale => MsLock(
+      label: s.lockStale,
+      state: MsLockState.stale,
+      meta: l!.memberId == app.me?.id ? s.you : l.name,
+      big: big,
+    ),
   };
 }
 

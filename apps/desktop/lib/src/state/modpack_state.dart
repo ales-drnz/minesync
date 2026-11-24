@@ -8,6 +8,7 @@
 // Anche il pacchetto per i giocatori (facoltative scelte su questo PC,
 // .mrpack, Prism, profilo del launcher ufficiale).
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -211,6 +212,7 @@ final class ModpackController extends ChangeNotifier {
         _base = onDisk;
         _baseIsNew = false;
         if (force || _draft == null || _draft!.mcVersion != onDisk.mcVersion) _draft = onDisk;
+        _restoreDraft();
         _set(PackPhase.ready);
         unawaited(_checkWatch());
         return;
@@ -302,6 +304,7 @@ final class ModpackController extends ChangeNotifier {
     );
     _base = _draft = pack;
     _baseIsNew = true;
+    _restoreDraft();
     _set(PackPhase.ready);
   }
 
@@ -322,7 +325,67 @@ final class ModpackController extends ChangeNotifier {
     if (d == null) return;
     _draft = f(d);
     if (_apply is ApplyDone || _apply is ApplyFailed) _apply = const ApplyIdle();
+    _saveDraft();
     _notify();
+  }
+
+  // --- modifiche preparate su disco ----------------------------------------------
+
+  /// Modifiche preparate e coda «Applica quando … chiude», con la base su cui
+  /// sono fatte: non si perdono chiudendo l'app mentre un altro gioca.
+  String get _draftPath => p.join(app.deps.configDir, 'modpack', '$id.draft.json');
+
+  void _saveDraft() {
+    final b = _base, d = _draft;
+    final f = File(_draftPath);
+    try {
+      // niente da ricordare: bozza uguale alla base e nessuna coda
+      if (b == null || d == null || (d == b && !_queued)) {
+        if (f.existsSync()) f.deleteSync();
+        return;
+      }
+      f.parent.createSync(recursive: true);
+      // sincrono: è piccolo, e l'app può chiudersi subito dopo
+      final tmp = File('$_draftPath.tmp')
+        ..writeAsStringSync(
+          jsonEncode({
+            'base': b.toJson(),
+            'baseIsNew': _baseIsNew,
+            'draft': d.toJson(),
+            'queued': _queued,
+          }),
+          flush: true,
+        );
+      tmp.renameSync(_draftPath);
+    } on Object {
+      // senza disco le modifiche restano solo in memoria, come prima
+    }
+  }
+
+  /// Rimette le modifiche salvate se sono fatte sulla stessa base; se nel
+  /// frattempo le mod sono cambiate (un altro le ha applicate) non valgono
+  /// più e il file si toglie.
+  void _restoreDraft() {
+    final f = File(_draftPath);
+    if (!f.existsSync()) return;
+    try {
+      final j = jsonDecode(f.readAsStringSync()) as Map<String, Object?>;
+      final base = Pack.fromJson(j['base']);
+      if (base != _base || (j['baseIsNew'] == true) != _baseIsNew) {
+        f.deleteSync();
+        return;
+      }
+      _draft = Pack.fromJson(j['draft']);
+      _queued = j['queued'] == true && dirty;
+      if (_queued) _apply = ApplyQueued(holder ?? '');
+    } on Object {
+      // file rovinato: si riparte dalla base
+      try {
+        f.deleteSync();
+      } on FileSystemException {
+        // già andato
+      }
+    }
   }
 
   /// Accende o spegne una mod.
@@ -360,6 +423,7 @@ final class ModpackController extends ChangeNotifier {
     _draft = _base;
     _queued = false;
     _apply = const ApplyIdle();
+    _saveDraft();
     _notify();
   }
 
@@ -704,6 +768,7 @@ final class ModpackController extends ChangeNotifier {
   void queueApply(bool on) {
     _queued = on && dirty;
     _apply = _queued ? ApplyQueued(holder ?? '') : const ApplyIdle();
+    _saveDraft();
     _notify();
     if (_queued && !locked) unawaited(apply());
   }
@@ -711,6 +776,7 @@ final class ModpackController extends ChangeNotifier {
   void _onApp() {
     if (_queued && !locked && !applying && app.connection == Connection.online) {
       _queued = false;
+      _saveDraft();
       unawaited(() async {
         await app.deps.platform.notifications.show(
           title: summary?.name ?? id,
@@ -738,6 +804,7 @@ final class ModpackController extends ChangeNotifier {
       if (now != null && now != b) {
         _base = now;
         _draft = now;
+        _saveDraft();
         return _done(const ApplyFailed('changedMeanwhile'));
       }
     }
@@ -752,6 +819,7 @@ final class ModpackController extends ChangeNotifier {
         // qualcun altro ha cambiato le mod: si rifà il conto sulla nuova base
         _base = now;
         _draft = now;
+        _saveDraft();
         return _done(const ApplyFailed('changedMeanwhile'));
       }
     }
@@ -816,6 +884,7 @@ final class ModpackController extends ChangeNotifier {
     _updates = const [];
     // la testa nuova subito, senza aspettare l'evento dell'hub
     await app.refreshSpaces().catchError((Object _) {});
+    _saveDraft();
     return _done(ApplyDone(pushed.generation?.n, count));
   }
 

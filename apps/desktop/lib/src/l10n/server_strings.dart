@@ -272,7 +272,7 @@ final class _It implements ServerStrings {
   @override
   String get worldWhere => 'Dove si trova il mondo';
   @override
-  String get forceAdmin => 'Forza e gioca… (admin)';
+  String get forceAdmin => 'Forza e gioca (admin)';
   @override
   String get mineTitle => 'Avviato a tuo nome, non in questa finestra';
   @override
@@ -304,7 +304,7 @@ final class _It implements ServerStrings {
   String staleAdvice(String who, int n) =>
       'Se aspetti, $who può tornare e salvarli. Se forzi, si riparte dall\'ultimo salvataggio.';
   @override
-  String get forcePlay => 'Forza e gioca…';
+  String get forcePlay => 'Forza e gioca';
 
   @override
   String wait(String who) => 'Attendi $who';
@@ -648,7 +648,7 @@ final class _En implements ServerStrings {
   @override
   String get worldWhere => 'Where the world is';
   @override
-  String get forceAdmin => 'Force and play… (admin)';
+  String get forceAdmin => 'Force and play (admin)';
   @override
   String get mineTitle => 'Started under your name, not in this window';
   @override
@@ -680,7 +680,7 @@ final class _En implements ServerStrings {
   String staleAdvice(String who, int n) =>
       'If you wait, $who can come back and save them. If you force, it restarts from the last save.';
   @override
-  String get forcePlay => 'Force and play…';
+  String get forcePlay => 'Force and play';
 
   @override
   String wait(String who) => 'Wait for $who';

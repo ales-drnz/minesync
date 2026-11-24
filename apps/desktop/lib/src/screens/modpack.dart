@@ -1176,27 +1176,35 @@ class PendingBar extends StatelessWidget {
         : waiting
         ? s.waitingModrinthText
         : s.appliesNext;
-    // una riga sola: conteggio, aiuto nel tooltip della «i», poi le prime
-    // modifiche
+    // conteggio con l'aiuto nel tooltip della «i», sotto le prime modifiche
     final gap = PixelScope.of(context).d(8);
-    final summary = Row(
+    final summary = MsStack(
+      gap: 6,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        MsText('${mp.changeCount} ${s.changes(mp.changeCount)}', weight: 700, maxLines: 1),
-        SizedBox(width: gap),
-        MsTooltip(
-          message: note,
-          child: Semantics(label: note, child: const MsIcon(MsIcons.info)),
+        Row(
+          children: [
+            Flexible(
+              child: MsText(
+                '${mp.changeCount} ${s.changes(mp.changeCount)}',
+                weight: 700,
+                maxLines: 1,
+              ),
+            ),
+            SizedBox(width: gap),
+            MsTooltip(
+              message: note,
+              child: Semantics(label: note, child: const MsIcon(MsIcons.info)),
+            ),
+          ],
         ),
-        SizedBox(width: gap),
         // le modifiche che entrano, l'ultima accorciata: niente etichette
         // tagliate a metà sul bordo
-        Flexible(
-          child: MsMeta([
-            if (waiting) s.waitingModrinth,
-            ...lines.take(_barLines),
-            if (lines.length > _barLines) s.andMore(lines.length - _barLines),
-          ], maxLines: 1),
-        ),
+        MsMeta([
+          if (waiting) s.waitingModrinth,
+          ...lines.take(_barLines),
+          if (lines.length > _barLines) s.andMore(lines.length - _barLines),
+        ], maxLines: 1),
       ],
     );
     // come nei dialoghi e nel wizard: «Annulla» poi l'azione principale, a
@@ -1251,10 +1259,10 @@ class PendingBar extends StatelessWidget {
                   children: [
                     Expanded(child: summary),
                     SizedBox(width: g.d(16)),
-                    // i pulsanti prima, al massimo su 3/5 della riga (poi a
-                    // capo tra loro); il resto alle modifiche
+                    // i pulsanti su una riga, con lo spazio che serve; al
+                    // riepilogo restano almeno 180 px (sotto, a capo tra loro)
                     ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: box.maxWidth * .6),
+                      constraints: BoxConstraints(maxWidth: box.maxWidth - g.d(196)),
                       child: actions,
                     ),
                   ],
