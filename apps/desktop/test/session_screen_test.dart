@@ -138,12 +138,25 @@ void main() {
     await t.pump();
     expect(s.commandHistory, ['say ciao']);
     expect(s.console.last.text, '> say ciao');
+    // dopo Invio il campo resta attivo: il comando seguente si scrive subito
+    final editable = find
+        .descendant(of: find.byType(MsConsole), matching: find.byType(EditableText))
+        .last;
+    expect(t.widget<EditableText>(editable).focusNode.hasFocus, isTrue);
+    await t.enterText(input, 'list');
+    await t.testTextInput.receiveAction(TextInputAction.done);
+    await t.pump();
+    expect(s.commandHistory, ['say ciao', 'list']);
+    expect(t.widget<EditableText>(editable).focusNode.hasFocus, isTrue);
     await t.tap(input);
     await t.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await t.pump();
     final field = t.widget<EditableText>(
       find.descendant(of: find.byType(MsConsole), matching: find.byType(EditableText)).last,
     );
+    expect(field.controller.text, 'list');
+    await t.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await t.pump();
     expect(field.controller.text, 'say ciao');
   });
 

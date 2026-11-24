@@ -207,6 +207,9 @@ class _SessionScreenState extends State<SessionScreen> {
     if (s == null || text.trim().isEmpty) return;
     _command.clear();
     _historyAt = null;
+    // il campo resta pronto per il comando successivo (Invio toglierebbe il
+    // focus e i tasti dopo andrebbero persi)
+    _commandFocus.requestFocus();
     try {
       await s.send(text);
     } on StateError {
