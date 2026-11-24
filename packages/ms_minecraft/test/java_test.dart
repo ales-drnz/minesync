@@ -299,6 +299,11 @@ void main() {
 /// Rende eseguibili [paths] (POSIX; su Windows non serve).
 void _chmodX(List<String> paths) {
   if (Platform.isWindows) return;
-  final r = Process.runSync('chmod', ['+x', ...paths]);
-  if (r.exitCode != 0) throw StateError('chmod: ${r.stderr}');
+  // sotto carico l'avvio di chmod può fallire senza messaggio: si riprova
+  ProcessResult? r;
+  for (var i = 0; i < 3; i++) {
+    r = Process.runSync('chmod', ['+x', ...paths]);
+    if (r.exitCode == 0) return;
+  }
+  throw StateError('chmod (uscita ${r!.exitCode}): ${r.stderr}');
 }

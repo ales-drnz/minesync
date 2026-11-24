@@ -234,7 +234,14 @@ Comandi:
   @override
   String playWarning(String code) => switch (code) {
     'saveNotConfirmed' => 'salvataggio non confermato dal server: ciclo saltato',
-    'uploadFailed' => 'caricamento non riuscito: nuovo tentativo al prossimo salvataggio',
+    'saveFailed' =>
+      'salvataggio non riuscito: si riprova appena l\'hub risponde o al prossimo salvataggio',
+    'saveOnFailed' => 'il salvataggio automatico del server non si è riattivato (save-on)',
+    'snapshotFailed' => 'copia del mondo non riuscita: si riprova al prossimo salvataggio',
+    'uploadFailed' =>
+      'caricamento non riuscito: si riprova appena l\'hub risponde o al prossimo salvataggio',
+    'pushAfterCrashFailed' =>
+      'caricamento dopo la chiusura imprevista non riuscito: il mondo resta su questo PC',
     'finalPushFailed' =>
       'caricamento finale non riuscito: il mondo resta su questo PC e verrà caricato la prossima '
           'volta',
@@ -422,7 +429,11 @@ Commands:
   @override
   String playWarning(String code) => switch (code) {
     'saveNotConfirmed' => 'save not confirmed by the server: cycle skipped',
-    'uploadFailed' => 'upload failed: retrying at the next save',
+    'saveFailed' => 'save failed: retrying as soon as the hub answers or at the next save',
+    'saveOnFailed' => 'the server\'s automatic saving was not turned back on (save-on)',
+    'snapshotFailed' => 'world copy failed: retrying at the next save',
+    'uploadFailed' => 'upload failed: retrying as soon as the hub answers or at the next save',
+    'pushAfterCrashFailed' => 'upload after the unexpected exit failed: the world stays on this PC',
     'finalPushFailed' =>
       'final upload failed: the world stays on this PC and will be uploaded next time',
     'unreadableKept' => 'some files cannot be read: the hub keeps their previous version',
