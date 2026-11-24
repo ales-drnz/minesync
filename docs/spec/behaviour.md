@@ -332,6 +332,7 @@ Concrete values (TTLs, limits, error codes) are part of the rule unless a rule s
 - **B-SESSION-27** `[session]` — Java version strings parse to a major: `1.8.0_x`→8, `17.0.9`, `21`, `21.0.1+12`, `11.0.20.1`, early access `24-ea`, `25-ea+3`, `1.8.0-ea`, `17-internal`; garbage → 0.
 - **B-SESSION-28** `[session]` — A Java runtime inside the synced folder (chosen manually or bundled in the pack) is never executed before Play: it is reported found but unverified.
 - **B-SESSION-29** `[session]` — Java preview picks the detected runtime matching the required major (17 for 1.20.1 even if 21 is listed first). Path containment check works on cleaned paths (`dir+"x"` is not inside `dir`).
+- **B-SESSION-30** `[session]` — When a save or its upload fails because the hub is unreachable, the session probes the hub every few seconds without touching the server and, as soon as it answers, uploads the pending snapshot (or takes a new one) instead of waiting for the next autosave.
 
 ## I18N — localisation
 

@@ -83,6 +83,9 @@ final class FakeHub {
   /// Blob il cui download si ferma a metà senza chiudere.
   final stall = <String>{};
 
+  /// Hub «spento»: ogni connessione si chiude senza risposta.
+  bool down = false;
+
   /// Contatori per le asserzioni.
   final calls = <String, int>{};
   final putCounts = <String, int>{};
@@ -183,6 +186,10 @@ final class FakeHub {
   // --- HTTP ---
 
   Future<void> _handle(HttpRequest req) async {
+    if (down) {
+      (await req.response.detachSocket(writeHeaders: false)).destroy();
+      return;
+    }
     final res = req.response;
     final segs = req.uri.pathSegments.skip(2).toList(); // dopo api/v1
     final key =

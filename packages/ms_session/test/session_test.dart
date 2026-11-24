@@ -106,6 +106,51 @@ void main() {
     expect(events.whereType<SessionWarning>(), isEmpty);
   });
 
+  test(
+    'B-SESSION-30 hub irraggiungibile durante un salvataggio: si riprova appena torna',
+    () async {
+      final s = session(
+        config: const SessionConfig(
+          autosaveEvery: Duration(hours: 1),
+          emptyStopAfter: null,
+          maxRestarts: 0,
+          flushWait: Duration(milliseconds: 500),
+          quietStable: Duration(milliseconds: 100),
+          quietCap: Duration(seconds: 2),
+          uploadRetry: Duration(milliseconds: 200),
+        ),
+      );
+      final events = <SessionEvent>[];
+      s.events.listen(events.add);
+      final run = s.run();
+      await until<StateChanged>(
+        s.events,
+        (e) => e is StateChanged && e.state == SessionState.running,
+      );
+      final before = hub.head(space)?.n ?? 0;
+      servers.single.play();
+      hub.down = true;
+      expect(s.saveNow(), SaveRequest.started);
+      // l'istantanea chiede la base all'hub: fallisce già il salvataggio
+      final failed = await until<SessionWarning>(
+        s.events,
+        (e) => e is SessionWarning && (e.code == 'saveFailed' || e.code == 'uploadFailed'),
+      );
+      expect(failed.cause, anyOf(isA<HubUnreachable>(), isA<TransferStalled>()));
+      // finché l'hub è giù si sonda solo l'hub: il server non salva di nuovo
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      expect(servers.single.commands.where((c) => c == 'save-all flush'), hasLength(1));
+      expect(hub.head(space)?.n ?? 0, before);
+      // l'hub torna: il salvataggio arriva senza aspettare quello automatico
+      hub.down = false;
+      final saved = await until<SavedToHub>(s.events, (e) => e is SavedToHub);
+      expect(saved.generation, before + 1);
+      expect(hubFile('world/level.dat'), 'world 1');
+      await s.stop();
+      await run;
+    },
+  );
+
   test('B-SESSION-10 il lock dice "play", con porta e giocatori', () async {
     final s = session();
     final run = s.run();

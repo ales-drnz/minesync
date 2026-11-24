@@ -113,6 +113,7 @@ final class SessionConfig {
     this.quietStable = const Duration(seconds: 1),
     this.quietCap = const Duration(seconds: 15),
     this.consoleLines = 2000,
+    this.uploadRetry = const Duration(seconds: 15),
   });
 
   final Duration autosaveEvery;
@@ -138,6 +139,7 @@ final class SessionConfig {
     quietStable: quietStable,
     quietCap: quietCap,
     consoleLines: consoleLines,
+    uploadRetry: uploadRetry,
   );
 
   /// Stessi valori che contano per chi gioca.
@@ -156,6 +158,10 @@ final class SessionConfig {
 
   /// Righe di console tenute in memoria per chi apre la vista dopo.
   final int consoleLines;
+
+  /// Dopo un caricamento fallito perché l'hub non risponde, ogni quanto si
+  /// riprova l'istantanea in attesa (senza aspettare il salvataggio dopo).
+  final Duration uploadRetry;
 }
 
 /// Sessione di gioco su uno spazio.
@@ -229,6 +235,9 @@ final class Session {
   int _restarts = 0;
   Timer? _autosaveTimer;
   Timer? _emptyTimer;
+
+  /// Nuovo tentativo di caricare l'istantanea in attesa (hub irraggiungibile).
+  Timer? _retryTimer;
 
   bool _saving = false;
   bool _manualQueued = false;
@@ -399,7 +408,37 @@ final class Session {
     _autosaveTimer?.cancel();
     _autosaveTimer = null;
     _nextAutosave = null;
+    _retryTimer?.cancel();
+    _retryTimer = null;
   }
+
+  /// L'hub non rispondeva durante un salvataggio: ogni [SessionConfig.uploadRetry]
+  /// lo si sonda con una richiesta leggera e, appena risponde, si carica
+  /// l'istantanea rimasta in attesa (o se ne fa una nuova). Così il
+  /// salvataggio arriva quando l'hub torna, non a quello automatico dopo, e
+  /// finché l'hub è giù il server non viene disturbato.
+  void _armRetry([DateTime? at]) {
+    _retryTimer?.cancel();
+    _retryTimer = Timer(config.uploadRetry, () async {
+      _retryTimer = null;
+      if (_stopRequested || _lockProblem != null) return;
+      try {
+        await _client.space(_space);
+      } on Object {
+        _armRetry(at);
+        return;
+      }
+      if (_stopRequested || _lockProblem != null || _retryTimer != null) return;
+      if (_state != SessionState.running || _saving || _upload != null) return;
+      if (engine.state.loadPending(_space) != null) {
+        _startUpload(at ?? DateTime.now());
+      } else {
+        unawaited(_saveCycle());
+      }
+    });
+  }
+
+  static bool _hubDown(Object e) => e is HubUnreachable || e is TransferStalled;
 
   /// Prossimo salvataggio automatico tra `config.autosaveEvery` (un timer
   /// alla volta, riarmato a ogni scatto: il periodo può cambiare dall'hub).
@@ -459,6 +498,9 @@ final class Session {
   Future<void> _saveCycle() async {
     final proc = _proc;
     if (proc == null || !proc.running) return;
+    // un'istantanea nuova sostituisce quella che si stava riprovando
+    _retryTimer?.cancel();
+    _retryTimer = null;
     _saving = true;
     _setState(SessionState.saving);
     var saveOff = false;
@@ -494,6 +536,7 @@ final class Session {
       }
     } on Object catch (e) {
       _emit(SessionWarning('saveFailed', cause: e));
+      if (_hubDown(e)) _armRetry();
     } finally {
       if (saveOff && proc.running) {
         try {
@@ -550,6 +593,7 @@ final class Session {
             _emit(const SessionAlert('hubDiskFull'));
           }
           _emit(SessionWarning('uploadFailed', cause: e));
+          if (_hubDown(e)) _armRetry(at);
         }
       } finally {
         _upload = null;
@@ -585,6 +629,8 @@ final class Session {
     if (_stopRequested) return;
     _stopRequested = true;
     _manualQueued = false;
+    _retryTimer?.cancel();
+    _retryTimer = null;
     _setState(SessionState.stopping);
     _flush?.complete(false);
     await _cancelUpload();
