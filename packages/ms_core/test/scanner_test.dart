@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -33,6 +34,26 @@ void main() {
       if (h) hashed?.add(rel);
     },
   );
+
+  test('B-SCAN-09 la visita non dipende dal ciclo di eventi occupato (interfaccia)', () async {
+    for (var i = 0; i < 3000; i++) {
+      put('world/data/f$i.dat', 'x$i').setLastModifiedSync(past);
+    }
+    final first = await scan();
+    expect(first.manifest.length, 3000);
+    // come l'isolate dell'interfaccia sotto carico: ogni giro del ciclo di
+    // eventi costa qualche millisecondo
+    final busy = Timer.periodic(Duration.zero, (_) {
+      final sw = Stopwatch()..start();
+      while (sw.elapsedMicroseconds < 3000) {}
+    });
+    addTearDown(busy.cancel);
+    final sw = Stopwatch()..start();
+    final again = await scan(prior: first.cache);
+    busy.cancel();
+    expect(again.manifest.length, 3000);
+    expect(sw.elapsed, lessThan(const Duration(seconds: 6)), reason: '${sw.elapsed}');
+  });
 
   test('manifest con esclusioni e hash corretti', () async {
     put('server.properties', 'motd=ciao');

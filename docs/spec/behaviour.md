@@ -147,6 +147,7 @@ Concrete values (TTLs, limits, error codes) are part of the rule unless a rule s
 - **B-SCAN-06** `[core]` — A broken symlink is skipped without failing the scan.
 - **B-SCAN-07** `[core]` — The scan skips names invalid on Windows and case-insensitive duplicates (keeping the first in sorted order, e.g. `Foo.txt` over `foo.txt`, `World/` over `world/`), keeps going, and emits one warning per category.
 - **B-SCAN-08** `[core]` — Quiescence wait: returns true once the folder has been stable for the requested time (a late write extends the wait); a folder that never stops changing makes it return false at the cap.
+- **B-SCAN-09** `[core]` — The directory walk of a scan (listing, type and size/date of every file) runs in a separate isolate with synchronous calls, so its duration does not depend on how busy the caller's event loop is (the desktop UI isolate).
 
 ## RET — automatic retention
 

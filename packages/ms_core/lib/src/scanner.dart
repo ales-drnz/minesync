@@ -4,6 +4,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:ms_protocol/ms_protocol.dart';
 import 'package:unorm_dart/unorm_dart.dart' as unorm;
@@ -160,13 +161,15 @@ Future<ScanResult> scanTree(
   final badNames = <String>[];
   final pending = <Future<void>>[];
 
-  Future<void> hashOne(String rel, String osPath, FileStat st) async {
-    var before = st;
+  Future<void> hashOne(String rel, String osPath, int size0, DateTime modified0) async {
+    var size = size0, modified = modified0;
     for (var attempt = 0; attempt < stableTries; attempt++) {
       if (attempt > 0) {
         await Future<void>.delayed(Duration(milliseconds: 50 * attempt));
-        before = await FileStat.stat(osPath);
-        if (before.type == FileSystemEntityType.notFound) return;
+        final again = await FileStat.stat(osPath);
+        if (again.type == FileSystemEntityType.notFound) return;
+        size = again.size;
+        modified = again.modified;
       }
       final FileHash r;
       try {
@@ -178,7 +181,7 @@ Future<ScanResult> scanTree(
         return;
       }
       final after = await FileStat.stat(osPath);
-      if (after.size == before.size && after.modified == before.modified && r.size == after.size) {
+      if (after.size == size && after.modified == modified && r.size == after.size) {
         final x = _execBit(rel, after, old[rel]);
         final mtime = after.modified.microsecondsSinceEpoch;
         final racy = clock.difference(after.modified) < racyWindow;
@@ -198,64 +201,31 @@ Future<ScanResult> scanTree(
     unreadable.add(rel);
   }
 
-  Future<void> walk(String osDir, String relDir) async {
-    final List<FileSystemEntity> children;
-    try {
-      children = await Directory(osDir).list(followLinks: false).toList();
-    } on FileSystemException {
-      if (relDir.isEmpty) rethrow;
-      unreadable.add('$relDir/');
-      return;
-    }
-    for (final e in children) {
-      final name = unorm.nfc(_baseName(e.path));
-      if (name.isEmpty) continue;
-      final rel = relDir.isEmpty ? name : '$relDir/$name';
-      var type = await FileSystemEntity.type(e.path, followLinks: false);
-      if (type == FileSystemEntityType.link) {
-        final target = await FileSystemEntity.type(e.path);
-        if (target == FileSystemEntityType.directory) {
-          if (exclusions.excludesDir(rel)) continue;
-          throw ScanException('dirSymlink', rel);
-        }
-        if (target != FileSystemEntityType.file) continue; // link rotto
-        type = FileSystemEntityType.file;
-      }
-      if (type == FileSystemEntityType.directory) {
-        if (exclusions.excludesDir(rel)) continue;
-        await walk(e.path, rel);
-        continue;
-      }
-      if (type != FileSystemEntityType.file) continue; // fifo, socket, device
-      if (exclusions.excludes(rel) || rel.endsWith(partSuffix)) continue;
-      if (checkPath(rel) != null) {
-        badNames.add(rel);
-        continue;
-      }
-      final st = await FileStat.stat(e.path); // segue i link a file
-      if (st.type == FileSystemEntityType.notFound) continue;
-      final ce = old[rel];
-      final mtime = st.modified.microsecondsSinceEpoch;
-      final reusable =
-          ce != null &&
-          ce.size == st.size &&
-          ce.mtime == mtime &&
-          !ce.racy &&
-          (st.size < chunkThreshold || ce.chunks != null) &&
-          !mtimeUnreliable(rel);
-      if (reusable) {
-        final x = _execBit(rel, st, ce);
-        final kept = CacheEntry(size: ce.size, mtime: ce.mtime, h: ce.h, chunks: ce.chunks, x: x);
-        cache[rel] = kept;
-        files[rel] = kept.entry;
-        onFile?.call(rel, false);
-      } else {
-        pending.add(hashOne(rel, e.path, st));
-      }
+  // la visita (elenco, tipo e data di ogni file) gira in un altro isolate con
+  // chiamate sincrone: sull'isolate dell'interfaccia ogni await aspetterebbe
+  // il ciclo degli eventi, e su migliaia di file la scansione durava minuti
+  final walked = await _walkInIsolate(root, exclusions);
+  unreadable.addAll(walked.unreadable);
+  badNames.addAll(walked.badNames);
+  for (final f in walked.files) {
+    final ce = old[f.rel];
+    final reusable =
+        ce != null &&
+        ce.size == f.size &&
+        ce.mtime == f.mtime &&
+        !ce.racy &&
+        (f.size < chunkThreshold || ce.chunks != null) &&
+        !mtimeUnreliable(f.rel);
+    if (reusable) {
+      final x = _execBitMode(f.rel, f.mode, ce.size, ce.mtime, ce);
+      final kept = CacheEntry(size: ce.size, mtime: ce.mtime, h: ce.h, chunks: ce.chunks, x: x);
+      cache[f.rel] = kept;
+      files[f.rel] = kept.entry;
+      onFile?.call(f.rel, false);
+    } else {
+      pending.add(hashOne(f.rel, f.os, f.size, DateTime.fromMicrosecondsSinceEpoch(f.mtime)));
     }
   }
-
-  await walk(root, '');
   await Future.wait(pending);
 
   // collisioni di maiuscole: si tiene il primo in ordine
@@ -286,10 +256,87 @@ String _baseName(String p) {
 /// Bit di esecuzione: su Linux e macOS dal file system; su Windows (NTFS non
 /// lo ha) si conserva quello noto se il file non è cambiato, altrimenti lo
 /// si deduce dagli script .sh.
+/// Come [_execBit], dai valori della visita.
+bool _execBitMode(String rel, int mode, int size, int mtime, CacheEntry? prior) {
+  if (!Platform.isWindows) return mode & 0x49 != 0; // 0o111
+  if (prior != null && prior.size == size && prior.mtime == mtime) return prior.x;
+  return rel.toLowerCase().endsWith('.sh');
+}
+
 bool _execBit(String rel, FileStat st, CacheEntry? prior) {
   if (!Platform.isWindows) return st.mode & 0x49 != 0; // 0o111
   if (prior != null && prior.size == st.size && prior.mtime == st.modified.microsecondsSinceEpoch) {
     return prior.x;
   }
   return rel.toLowerCase().endsWith('.sh');
+}
+
+/// [_walkSync] in un isolate. Funzione a sé: la closure cattura solo i due
+/// argomenti (dentro [scanTree] si porterebbe dietro anche il pool, che non
+/// si può inviare).
+Future<_Walked> _walkInIsolate(String root, Exclusions exclusions) =>
+    Isolate.run(() => _walkSync(root, exclusions));
+
+/// Un file trovato dalla visita.
+typedef _Found = ({String rel, String os, int size, int mtime, int mode});
+
+/// Esito della visita sincrona.
+typedef _Walked = ({List<_Found> files, List<String> unreadable, List<String> badNames});
+
+/// Visita [root] con chiamate sincrone (gira in un isolate a parte): i file
+/// inclusi con dimensione, data e permessi, le cartelle illeggibili e i nomi
+/// non portabili. [ScanException] per una cartella che è un collegamento.
+_Walked _walkSync(String root, Exclusions exclusions) {
+  final files = <_Found>[];
+  final unreadable = <String>[];
+  final badNames = <String>[];
+
+  void walk(String osDir, String relDir) {
+    final List<FileSystemEntity> children;
+    try {
+      children = Directory(osDir).listSync(followLinks: false);
+    } on FileSystemException {
+      if (relDir.isEmpty) rethrow;
+      unreadable.add('$relDir/');
+      return;
+    }
+    for (final e in children) {
+      final name = unorm.nfc(_baseName(e.path));
+      if (name.isEmpty) continue;
+      final rel = relDir.isEmpty ? name : '$relDir/$name';
+      var type = FileSystemEntity.typeSync(e.path, followLinks: false);
+      if (type == FileSystemEntityType.link) {
+        final target = FileSystemEntity.typeSync(e.path);
+        if (target == FileSystemEntityType.directory) {
+          if (exclusions.excludesDir(rel)) continue;
+          throw ScanException('dirSymlink', rel);
+        }
+        if (target != FileSystemEntityType.file) continue; // link rotto
+        type = FileSystemEntityType.file;
+      }
+      if (type == FileSystemEntityType.directory) {
+        if (exclusions.excludesDir(rel)) continue;
+        walk(e.path, rel);
+        continue;
+      }
+      if (type != FileSystemEntityType.file) continue; // fifo, socket, device
+      if (exclusions.excludes(rel) || rel.endsWith(partSuffix)) continue;
+      if (checkPath(rel) != null) {
+        badNames.add(rel);
+        continue;
+      }
+      final st = FileStat.statSync(e.path); // segue i link a file
+      if (st.type == FileSystemEntityType.notFound) continue;
+      files.add((
+        rel: rel,
+        os: e.path,
+        size: st.size,
+        mtime: st.modified.microsecondsSinceEpoch,
+        mode: st.mode,
+      ));
+    }
+  }
+
+  walk(root, '');
+  return (files: files, unreadable: unreadable, badNames: badNames);
 }
