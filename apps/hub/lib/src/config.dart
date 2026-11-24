@@ -18,6 +18,7 @@ final class HubConfig {
     this.maxUploads = 4,
     this.minFree,
     this.devUser,
+    this.devUsers = const {},
     this.ztnetUrl,
     this.ztnetToken,
     this.ztnetNetwork,
@@ -63,6 +64,24 @@ final class HubConfig {
         throw FormatException('MINESYNC_DNS_ADDR: ${e.message}');
       }
     }
+    final devUser = v('MINESYNC_DEV_USER');
+    final devUsersRaw = v('MINESYNC_DEV_USERS');
+    final devUsers = devUsersRaw == null ? const <String, String>{} : parseDevUsers(devUsersRaw);
+    if (devUsersRaw != null) {
+      if (devUser != null) {
+        throw const FormatException('MINESYNC_DEV_USERS e MINESYNC_DEV_USER si escludono');
+      }
+      if (!addr.isLoopback) {
+        throw FormatException(
+          'MINESYNC_DEV_USERS: MINESYNC_ADDR deve essere di loopback, non $http',
+        );
+      }
+      if (addr.type != InternetAddressType.IPv4) {
+        throw const FormatException(
+          'MINESYNC_DEV_USERS: MINESYNC_ADDR deve essere un IPv4 127.x.y.z',
+        );
+      }
+    }
     return HubConfig(
       dataDir: v('MINESYNC_DATA') ?? '/data',
       address: addr,
@@ -73,7 +92,8 @@ final class HubConfig {
       allowedHosts: list('MINESYNC_HOSTS'),
       maxUploads: maxUp,
       minFree: minFree == null ? null : parseBytes(minFree),
-      devUser: v('MINESYNC_DEV_USER'),
+      devUser: devUser,
+      devUsers: devUsers,
       ztnetUrl: v('ZTNET_URL'),
       ztnetToken: v('ZTNET_API_TOKEN'),
       ztnetNetwork: v('ZTNET_NETWORK_ID'),
@@ -109,6 +129,10 @@ final class HubConfig {
   /// Soglia di spazio libero esplicita (MINESYNC_MIN_FREE).
   final int? minFree;
   final String? devUser;
+
+  /// MINESYNC_DEV_USERS: indirizzo di loopback → nome, un giocatore di
+  /// sviluppo per indirizzo (vuota = spenta).
+  final Map<String, String> devUsers;
   final String? ztnetUrl;
   final String? ztnetToken;
   final String? ztnetNetwork;
@@ -156,4 +180,34 @@ final class HubConfig {
   final a = InternetAddress.tryParse(host);
   if (a == null) throw FormatException('MINESYNC_ADDR: atteso un indirizzo IP, non $host');
   return (a, port);
+}
+
+/// `127.0.0.1=alice,127.0.0.2=bob` → {indirizzo: nome}. Solo indirizzi IPv4
+/// di loopback, senza indirizzi o nomi doppi.
+Map<String, String> parseDevUsers(String s) {
+  final out = <String, String>{};
+  final names = <String>{};
+  for (final part in s.split(',')) {
+    final p = part.trim();
+    if (p.isEmpty) continue;
+    final eq = p.indexOf('=');
+    final ip = eq < 0 ? '' : p.substring(0, eq).trim();
+    final name = eq < 0 ? '' : p.substring(eq + 1).trim();
+    if (ip.isEmpty || name.isEmpty) {
+      throw FormatException('MINESYNC_DEV_USERS: atteso indirizzo=nome, non $p');
+    }
+    final a = InternetAddress.tryParse(ip);
+    if (a == null || a.type != InternetAddressType.IPv4 || !a.isLoopback) {
+      throw FormatException('MINESYNC_DEV_USERS: $ip non è un indirizzo di loopback 127.x.y.z');
+    }
+    if (out.containsKey(a.address)) {
+      throw FormatException('MINESYNC_DEV_USERS: indirizzo ripetuto $ip');
+    }
+    if (!names.add(name.toLowerCase())) {
+      throw FormatException('MINESYNC_DEV_USERS: nome ripetuto $name');
+    }
+    out[a.address] = name;
+  }
+  if (out.isEmpty) throw const FormatException('MINESYNC_DEV_USERS: elenco vuoto');
+  return out;
 }

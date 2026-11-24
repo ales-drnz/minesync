@@ -52,8 +52,7 @@ final class Hub {
     this.events,
     this.members,
     this._resolver,
-    this._server,
-    this._socket,
+    this._servers,
     this._log,
     this.dns,
     this.extras,
@@ -111,11 +110,37 @@ final class Hub {
     await members.load();
     final res = resolver ?? defaultResolver(config, c, lg);
     final ss = await ServerSocket.bind(config.address, config.port, v6Only: false);
-    final server = HttpServer.listenOn(
-      config.receiveBuffer > 0 ? _TunedServerSocket(ss, config.receiveBuffer) : ss,
-    );
-    server.idleTimeout = const Duration(seconds: 120);
-    final hub = Hub._(config, store, events, members, res, server, ss, lg, dns, extras, c.wallMs());
+    final sockets = [ss];
+    // MINESYNC_DEV_USERS: un socket per indirizzo di loopback, sulla stessa
+    // porta, per sapere a quale indirizzo si è collegato il client
+    for (final ip in config.devUsers.keys) {
+      final a = InternetAddress(ip);
+      if (a.address == canonicalIp(ss.address)) continue;
+      try {
+        sockets.add(await ServerSocket.bind(a, ss.port));
+      } on Object {
+        for (final s in sockets) {
+          await s.close();
+        }
+        rethrow;
+      }
+    }
+    final servers = [
+      for (final s in sockets)
+        _Listener(
+          HttpServer.listenOn(
+            config.receiveBuffer > 0 ? _TunedServerSocket(s, config.receiveBuffer) : s,
+          )..idleTimeout = const Duration(seconds: 120),
+          s,
+        ),
+    ];
+    if (config.devUsers.isNotEmpty) {
+      lg(
+        'hub: giocatori di sviluppo ${[for (final e in config.devUsers.entries) '${e.value}@${e.key}'].join(', ')} '
+        '(porta ${ss.port}, solo loopback)',
+      );
+    }
+    final hub = Hub._(config, store, events, members, res, servers, lg, dns, extras, c.wallMs());
     // web UI, /dl e prova della porta
     hub.web = await _loadWeb(config.webDir, lg);
     hub.downloads = Downloads(config.dlDir);
@@ -144,6 +169,7 @@ final class Hub {
   ) {
     final list = <IdentityResolver>[
       if (config.devUser != null) DevResolver(config.devUser!),
+      if (config.devUsers.isNotEmpty) DevUsersResolver(config.devUsers),
       if (config.hasZtnet)
         ZtnetResolver.http(
           url: config.ztnetUrl!,
@@ -153,7 +179,9 @@ final class Hub {
           log: log,
         ),
     ];
-    if (list.isEmpty) log('hub: né ZTNET né MINESYNC_DEV_USER configurati: nessuno può entrare');
+    if (list.isEmpty) {
+      log('hub: né ZTNET né MINESYNC_DEV_USER(S) configurati: nessuno può entrare');
+    }
     return ChainResolver(list);
   }
 
@@ -162,10 +190,13 @@ final class Hub {
   final EventLog events;
   final Members members;
   final IdentityResolver _resolver;
-  final HttpServer _server;
 
-  /// Il socket in ascolto: HttpServer.listenOn non lo chiude da solo.
-  final ServerSocket _socket;
+  /// I server in ascolto: quello di MINESYNC_ADDR e, con MINESYNC_DEV_USERS,
+  /// uno per ogni altro indirizzo di loopback.
+  final List<_Listener> _servers;
+
+  /// Indirizzo del socket che ha accettato la richiesta.
+  final _localOf = Expando<InternetAddress>('local');
   final void Function(String) _log;
   final _sse = <HttpResponse>{};
 
@@ -194,7 +225,7 @@ final class Hub {
   Timer? _keepAlive;
   bool _closing = false;
 
-  int get port => _server.port;
+  int get port => _servers.first.http.port;
 
   /// Impostazioni applicate a caldo e stato di ZTNET negli eventi.
   void _wire() {
@@ -236,21 +267,24 @@ final class Hub {
 
   Future<Identity?> _identify(HttpRequest req) async {
     final remote = req.connectionInfo?.remoteAddress;
-    return remote == null ? null : _resolver.resolve(remote);
+    return remote == null ? null : _resolver.resolve(remote, local: _localOf[req]);
   }
 
   void _listen() {
     _keepAlive = Timer.periodic(config.keepAlive, (_) => _broadcast(': ka\n\n'));
-    _server.listen((req) {
-      _handle(req).catchError((Object e, StackTrace st) {
-        _log('hub: ${req.method} ${req.uri.path}: $e\n$st');
-        try {
-          req.response.close().ignore();
-        } catch (_) {
-          // risposta già chiusa
-        }
+    for (final l in _servers) {
+      l.http.listen((req) {
+        _localOf[req] = l.socket.address;
+        _handle(req).catchError((Object e, StackTrace st) {
+          _log('hub: ${req.method} ${req.uri.path}: $e\n$st');
+          try {
+            req.response.close().ignore();
+          } catch (_) {
+            // risposta già chiusa
+          }
+        });
       });
-    });
+    }
   }
 
   /// Spegnimento pulito: niente nuove connessioni, stream SSE chiusi, stato
@@ -268,8 +302,11 @@ final class Hub {
       }
     }
     _sse.clear();
-    await _server.close(force: true);
-    await _socket.close();
+    for (final l in _servers) {
+      await l.http.close(force: true);
+      // HttpServer.listenOn non chiude il socket da solo
+      await l.socket.close();
+    }
     await _world.close();
     await store.close();
     await members.flush();
@@ -377,7 +414,7 @@ final class Hub {
   /// simili non contano mai); null se sconosciuto. Lo registra come visto.
   Future<Identity?> identify(HttpRequest req) async {
     final remote = req.connectionInfo?.remoteAddress;
-    final who = remote == null ? null : await _resolver.resolve(remote);
+    final who = remote == null ? null : await _resolver.resolve(remote, local: _localOf[req]);
     if (who != null) members.seen(who);
     return who;
   }
@@ -1015,6 +1052,13 @@ final class Hub {
 /// e con l'autotuning del kernel i pezzi del corpo crescono con il ritmo del
 /// mittente (misurato). Un buffer di ricezione piccolo tiene piccoli i
 /// pezzi e fa lavorare la backpressure a grana fine.
+/// Un server HTTP e il socket su cui ascolta.
+final class _Listener {
+  const _Listener(this.http, this.socket);
+  final HttpServer http;
+  final ServerSocket socket;
+}
+
 final class _TunedServerSocket extends StreamView<Socket> implements ServerSocket {
   _TunedServerSocket(this._ss, int bytes)
     : super(

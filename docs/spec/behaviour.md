@@ -225,6 +225,7 @@ Concrete values (TTLs, limits, error codes) are part of the rule unless a rule s
 - **B-AUTH-10** `[core]` — Unauthenticated callers get 401 whose message tells them to join the private network and never mentions passwords or tokens.
 - **B-AUTH-11** `[core]` — Admin-only endpoints (settings read/write/test, force-release of a live lock, nolock push, allowMassDelete) return 403 to members.
 - **B-AUTH-12** `[core]` — The client ignores the system HTTP proxy when talking to the hub (identity is the source address); `MINESYNC_USE_PROXY=1` re-enables it.
+- **B-AUTH-13** `[core]` — Several development identities (`MINESYNC_DEV_USERS=127.0.0.1=alice,127.0.0.2=bob`): the hub listens on every listed loopback address on the `MINESYNC_ADDR` port and the player is chosen by the address the client connected to, only for loopback callers. The hub refuses to start when an entry is not an IPv4 loopback address, when `MINESYNC_ADDR` is not an IPv4 loopback address, on duplicate addresses or names, or together with `MINESYNC_DEV_USER`.
 
 ## EVENTS — event log
 

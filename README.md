@@ -259,6 +259,8 @@ In another terminal start the app and enter `http://127.0.0.1:8084` as the hub:
 cd apps/desktop && flutter run -d linux   # or windows / macos
 ```
 
+To try two players at once, replace `MINESYNC_DEV_USER=alice` with `MINESYNC_DEV_USERS=127.0.0.1=alice,127.0.0.2=bob` and give the second app its own configuration folder (`MINESYNC_CONFIG_DIR`) and the hub `http://127.0.0.2:8084`.
+
 ---
 
 ## Guide

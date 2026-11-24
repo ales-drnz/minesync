@@ -141,6 +141,89 @@ void main() {
       expect((await d.resolve(InternetAddress('::ffff:127.0.0.1')))?.name, 'alice');
       expect(await d.resolve(InternetAddress('192.0.2.5')), isNull);
     });
+
+    test('B-AUTH-13 più giocatori di sviluppo: decide l\'indirizzo locale', () async {
+      final r = DevUsersResolver({'127.0.0.1': 'alice', '127.0.0.2': 'bob'});
+      final lo = InternetAddress.loopbackIPv4;
+      expect(
+        await r.resolve(lo, local: InternetAddress('127.0.0.1')),
+        const Identity('dev-alice', 'alice'),
+      );
+      expect(
+        await r.resolve(lo, local: InternetAddress('127.0.0.2')),
+        const Identity('dev-bob', 'bob'),
+      );
+      expect(
+        (await r.resolve(
+          InternetAddress('::ffff:127.0.0.1'),
+          local: InternetAddress('::ffff:127.0.0.2'),
+        ))?.name,
+        'bob',
+      );
+      expect(
+        await r.resolve(lo, local: InternetAddress('127.0.0.3')),
+        isNull,
+        reason: 'non in elenco',
+      );
+      expect(await r.resolve(lo), isNull, reason: 'senza indirizzo locale');
+      expect(
+        await r.resolve(InternetAddress('192.0.2.5'), local: InternetAddress('127.0.0.1')),
+        isNull,
+        reason: 'chi chiama da fuori resta sconosciuto',
+      );
+      expect(await r.resolve(lo, local: InternetAddress('192.0.2.10')), isNull);
+    });
+
+    test('B-AUTH-13 MINESYNC_DEV_USERS: solo loopback, elenco valido', () {
+      final c = HubConfig.fromEnv({
+        'MINESYNC_ADDR': '127.0.0.1:0',
+        'MINESYNC_DEV_USERS': ' 127.0.0.1=alice , 127.0.0.2 = bob ,',
+      });
+      expect(c.devUsers, {'127.0.0.1': 'alice', '127.0.0.2': 'bob'});
+      expect(HubConfig.fromEnv({}).devUsers, isEmpty);
+      for (final (env, why) in [
+        (
+          {'MINESYNC_DEV_USERS': '127.0.0.1=alice'},
+          'MINESYNC_ADDR predefinito su tutte le interfacce',
+        ),
+        (
+          {'MINESYNC_ADDR': '0.0.0.0:8084', 'MINESYNC_DEV_USERS': '127.0.0.1=alice'},
+          'ADDR non loopback',
+        ),
+        (
+          {'MINESYNC_ADDR': '192.0.2.10:8084', 'MINESYNC_DEV_USERS': '127.0.0.1=alice'},
+          'ADDR remoto',
+        ),
+        ({'MINESYNC_ADDR': '[::1]:8084', 'MINESYNC_DEV_USERS': '127.0.0.1=alice'}, 'ADDR IPv6'),
+        (
+          {'MINESYNC_ADDR': '127.0.0.1:0', 'MINESYNC_DEV_USERS': '192.0.2.5=alice'},
+          'indirizzo remoto',
+        ),
+        ({'MINESYNC_ADDR': '127.0.0.1:0', 'MINESYNC_DEV_USERS': '::1=alice'}, 'IPv6'),
+        ({'MINESYNC_ADDR': '127.0.0.1:0', 'MINESYNC_DEV_USERS': 'localhost=alice'}, 'nome host'),
+        ({'MINESYNC_ADDR': '127.0.0.1:0', 'MINESYNC_DEV_USERS': '127.0.0.1'}, 'senza nome'),
+        ({'MINESYNC_ADDR': '127.0.0.1:0', 'MINESYNC_DEV_USERS': '127.0.0.1='}, 'nome vuoto'),
+        ({'MINESYNC_ADDR': '127.0.0.1:0', 'MINESYNC_DEV_USERS': ','}, 'elenco vuoto'),
+        (
+          {'MINESYNC_ADDR': '127.0.0.1:0', 'MINESYNC_DEV_USERS': '127.0.0.1=alice,127.0.0.1=bob'},
+          'indirizzo doppio',
+        ),
+        (
+          {'MINESYNC_ADDR': '127.0.0.1:0', 'MINESYNC_DEV_USERS': '127.0.0.1=alice,127.0.0.2=Alice'},
+          'nome doppio',
+        ),
+        (
+          {
+            'MINESYNC_ADDR': '127.0.0.1:0',
+            'MINESYNC_DEV_USERS': '127.0.0.1=alice',
+            'MINESYNC_DEV_USER': 'carol',
+          },
+          'insieme a MINESYNC_DEV_USER',
+        ),
+      ]) {
+        expect(() => HubConfig.fromEnv(env), throwsFormatException, reason: why);
+      }
+    });
   });
 
   group('HTTP', () {
@@ -413,5 +496,36 @@ void main() {
     final me = HubInfo.fromJson(j).me;
     expect(me.name, 'alice');
     expect(me.admin, isTrue);
+  });
+
+  test('B-AUTH-13 l\'hub con MINESYNC_DEV_USERS distingue i giocatori', () async {
+    final dir = await Directory.systemTemp.createTemp('minesync-hub-devs-');
+    final hub = await Hub.start(
+      HubConfig.fromEnv({
+        'MINESYNC_DATA': dir.path,
+        'MINESYNC_ADDR': '127.0.0.1:0',
+        'MINESYNC_DEV_USERS': '127.0.0.1=alice,127.0.0.2=bob',
+        'MINESYNC_ADMINS': 'dev-alice',
+      }),
+      disk: FakeDisk().probe,
+      log: (_) {},
+    );
+    addTearDown(() async {
+      await hub.close();
+      await dir.delete(recursive: true);
+    });
+    final c = HttpClient();
+    addTearDown(c.close);
+    Future<Me> me(String ip) async {
+      final r = await (await c.getUrl(Uri.parse('http://$ip:${hub.port}/api/v1/hub'))).close();
+      return HubInfo.fromJson(jsonDecode(await utf8.decoder.bind(r).join())).me;
+    }
+
+    final a = await me('127.0.0.1');
+    expect((a.name, a.admin), ('alice', true));
+    final b = await me('127.0.0.2');
+    expect((b.name, b.admin), ('bob', false));
+    // un indirizzo non in elenco non è in ascolto
+    await expectLater(Socket.connect('127.0.0.3', hub.port), throwsA(isA<SocketException>()));
   });
 }

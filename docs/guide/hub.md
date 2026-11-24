@@ -68,9 +68,10 @@ own `9993/udp`.
 | `MINESYNC_DL` | `/app/dl` in the image | folder of downloads and `update/`; unset = no downloads |
 | `TZ` | system (UTC in the image) | time zone of the logs and of the Telegram bot |
 | `MINESYNC_DEV_USER` | unset | development only: every loopback request is this user. Never on a real hub |
+| `MINESYNC_DEV_USERS` | unset | development only: `127.0.0.1=alice,127.0.0.2=bob`, one player per loopback address the client connects to (the hub listens on each, on the `MINESYNC_ADDR` port). Needs a loopback `MINESYNC_ADDR`; excludes `MINESYNC_DEV_USER` |
 
 All ZTNET variables must be set for ZTNET to be used. Without ZTNET (and
-without `MINESYNC_DEV_USER`) nobody can enter: the hub logs it at start.
+without `MINESYNC_DEV_USER` or `MINESYNC_DEV_USERS`) nobody can enter: the hub logs it at start.
 Invalid values stop the hub with exit code 2 and a message. Variables are
 read at start and shown read-only in Admin › System; everything else is set
 live from the Admin area.

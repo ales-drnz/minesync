@@ -30,9 +30,11 @@ final class Identity {
   String toString() => '$name ($id)';
 }
 
-/// Risolve l'indirizzo sorgente in un membro; null = sconosciuto.
+/// Risolve l'indirizzo sorgente in un membro; null = sconosciuto. [local] è
+/// l'indirizzo del socket in ascolto che ha accettato la connessione: lo usa
+/// solo [DevUsersResolver].
 abstract interface class IdentityResolver {
-  Future<Identity?> resolve(InternetAddress remote);
+  Future<Identity?> resolve(InternetAddress remote, {InternetAddress? local});
 }
 
 /// Forma canonica di un indirizzo: gli IPv4 mappati in IPv6 (`::ffff:a.b.c.d`,
@@ -58,7 +60,8 @@ final class StaticResolver implements IdentityResolver {
   final Map<String, Identity> byIp;
 
   @override
-  Future<Identity?> resolve(InternetAddress remote) async => byIp[canonicalIp(remote)];
+  Future<Identity?> resolve(InternetAddress remote, {InternetAddress? local}) async =>
+      byIp[canonicalIp(remote)];
 }
 
 /// Identità di sviluppo (MINESYNC_DEV_USER): vale solo per chi chiama dal
@@ -68,8 +71,28 @@ final class DevResolver implements IdentityResolver {
   final String name;
 
   @override
-  Future<Identity?> resolve(InternetAddress remote) async =>
-      isLoopback(remote) ? Identity('dev-${name.toLowerCase()}', name) : null;
+  Future<Identity?> resolve(InternetAddress remote, {InternetAddress? local}) async =>
+      isLoopback(remote) ? devIdentity(name) : null;
+}
+
+/// Identità di sviluppo per [name]: id `dev-<nome minuscolo>`.
+Identity devIdentity(String name) => Identity('dev-${name.toLowerCase()}', name);
+
+/// Più identità di sviluppo (MINESYNC_DEV_USERS): il giocatore dipende
+/// dall'indirizzo di loopback a cui il client si è collegato, perché su Linux
+/// la sorgente di una connessione verso 127.0.0.2 resta 127.0.0.1. Vale solo
+/// se anche chi chiama è sul loopback; chiunque altro resta sconosciuto.
+final class DevUsersResolver implements IdentityResolver {
+  /// [byLocal]: indirizzo locale canonico → nome.
+  DevUsersResolver(Map<String, String> byLocal)
+    : _byLocal = {for (final e in byLocal.entries) e.key: devIdentity(e.value)};
+  final Map<String, Identity> _byLocal;
+
+  @override
+  Future<Identity?> resolve(InternetAddress remote, {InternetAddress? local}) async {
+    if (local == null || !isLoopback(remote) || !isLoopback(local)) return null;
+    return _byLocal[canonicalIp(local)];
+  }
 }
 
 /// Prova i resolver in ordine; vince il primo che riconosce l'indirizzo.
@@ -78,9 +101,9 @@ final class ChainResolver implements IdentityResolver {
   final List<IdentityResolver> resolvers;
 
   @override
-  Future<Identity?> resolve(InternetAddress remote) async {
+  Future<Identity?> resolve(InternetAddress remote, {InternetAddress? local}) async {
     for (final r in resolvers) {
-      final id = await r.resolve(remote);
+      final id = await r.resolve(remote, local: local);
       if (id != null) return id;
     }
     return null;
@@ -220,7 +243,7 @@ final class ZtnetResolver implements IdentityResolver {
   int get authorizedCount => _roster?.where((m) => m.authorized).length ?? 0;
 
   @override
-  Future<Identity?> resolve(InternetAddress remote) async {
+  Future<Identity?> resolve(InternetAddress remote, {InternetAddress? local}) async {
     final fetched = _fetchedAt;
     if (fetched == null) {
       await _refresh();

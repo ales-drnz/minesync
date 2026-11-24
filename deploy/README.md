@@ -40,8 +40,8 @@ Rules that matter:
   ZeroTier. Do not publish 8084 on the LAN.
 - Admins are listed in `MINESYNC_ADMINS` (ZTNET names or node ids); roles of
   everyone else are set from the web UI's Admin area.
-- `MINESYNC_DEV_USER` is for development only (it accepts requests from
-  loopback); never set it on a real hub.
+- `MINESYNC_DEV_USER` and `MINESYNC_DEV_USERS` are for development only
+  (they accept requests from loopback); never set them on a real hub.
 
 ## Optional DNS (port 53)
 
