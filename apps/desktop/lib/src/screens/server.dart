@@ -211,50 +211,64 @@ class _Header extends StatelessWidget {
   }
 }
 
-/// Pannello in rilievo del Gioca: testo a sinistra, azioni a destra.
+/// Pannello in rilievo dello stato del server, compatto come una riga di
+/// impostazione: a sinistra titolo e una riga di testo, a destra
+/// un'informazione breve ([value]), il pulsante secondario e quello
+/// principale, con lo stesso margine sopra, sotto e a destra. Tutti gli
+/// stati hanno la stessa forma: cambiando stato il contenuto sotto non salta.
 class _PlayFrame extends StatelessWidget {
-  const _PlayFrame({required this.label, required this.main, required this.side});
+  const _PlayFrame({
+    required this.label,
+    required this.title,
+    required this.text,
+    this.value,
+    this.secondary,
+    this.primary,
+  });
   final String label;
-  final List<Widget> main;
-  final List<Widget> side;
+  final Widget title;
+  final String text;
+  final String? value;
+  final Widget? secondary;
+  final Widget? primary;
 
   @override
   Widget build(BuildContext context) {
     final g = PixelScope.of(context);
+    final left = MsStack(
+      gap: 4,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        title,
+        MsText(text, tone: MsTextTone.secondary),
+      ],
+    );
+    final right = MsRow(
+      gap: 12,
+      wrap: false,
+      children: [
+        if (value != null) MsText.small(value!, tone: MsTextTone.secondary, maxLines: 1),
+        ?secondary,
+        ?primary,
+      ],
+    );
     return MsPanel(
       raised: true,
       semanticLabel: label,
-      padding: MsPanelPadding.none,
-      child: Padding(
-        padding: EdgeInsets.all(g.d(20)),
-        // colonna del Gioca larga fissa 320: con la finestra larga il
-        // pulsante non si allunga, con quella stretta va sotto il testo
-        child: LayoutBuilder(
-          builder: (context, box) {
-            final text = MsStack(
-              gap: 8,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: main,
-            );
-            final actions = MsStack(gap: 10, children: side);
-            if (box.maxWidth < g.d(300 + 24 + 320)) {
-              return MsStack(gap: 20, children: [text, if (side.isNotEmpty) actions]);
-            }
-            // alto sempre uguale: pulsante grande (84 con bordo e ombra) più
-            // la riga sotto (10 + 44), anche quando la riga o il pulsante non
-            // ci sono. Cambiando stato il contenuto sotto non salta
-            return ConstrainedBox(
-              constraints: BoxConstraints(minHeight: g.d(138)),
-              child: Row(
+      child: LayoutBuilder(
+        builder: (context, box) => box.maxWidth < g.d(720)
+            ? MsStack(
+                gap: 12,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [left, right],
+              )
+            : Row(
                 children: [
-                  Expanded(child: text),
+                  Expanded(child: left),
                   SizedBox(width: g.d(24)),
-                  SizedBox(width: g.d(320), child: actions),
+                  right,
                 ],
               ),
-            );
-          },
-        ),
       ),
     );
   }
@@ -273,32 +287,27 @@ class _FreePanel extends StatelessWidget {
     final s = strings.server;
     final head = space.head;
     final pending = state.pending;
-    // cosa succede premendo Gioca, solo quando c'è da aspettare
-    final sub = !state.linked && head != null
+    // cosa succede premendo Gioca quando c'è da aspettare, altrimenti
+    // l'ultimo salvataggio
+    final value = !state.linked && head != null
         ? s.firstDownload(strings.fmt.size(head.stats.size))
         : pending != null
         ? s.toDownload(pending.files)
+        : head != null
+        ? '${s.lastSave}: ${s.lastSaveValue(head.author, strings.fmt.ago(app.localTime(head.ts), app.now()))}'
         : null;
     return _PlayFrame(
       label: s.play,
-      main: [
-        MsRow(gap: 12, children: [MsText.h2(s.freeTitle), lockBadge(context, space)]),
-        MsText(s.freeText(space.name), tone: MsTextTone.secondary),
-        if (head != null)
-          MsText.small(
-            '${s.lastSave}: ${s.lastSaveValue(head.author, strings.fmt.ago(app.localTime(head.ts), app.now()))}',
-            tone: MsTextTone.secondary,
-          ),
-      ],
-      side: [
-        MsButton.play(
-          label: s.play,
-          subtitle: sub,
-          icon: const MsIcon(MsIcons.play),
-          block: true,
-          onPressed: online ? () => startPlay(app, state.id) : null,
-        ),
-      ],
+      title: MsRow(gap: 12, children: [MsText.h3(s.freeTitle), lockBadge(context, space)]),
+      text: s.freeText(space.name),
+      value: value,
+      primary: MsButton(
+        label: s.play,
+        variant: MsButtonVariant.primary,
+        size: MsButtonSize.lg,
+        icon: const MsIcon(MsIcons.play),
+        onPressed: online ? () => startPlay(app, state.id) : null,
+      ),
     );
   }
 }
@@ -315,35 +324,26 @@ class _OtherPanel extends StatelessWidget {
     final l = space.lock!;
     final since = strings.fmt.duration(app.now().difference(app.localTime(l.since)));
     final notify = app.notifyWhenFree(space.id);
-    // come gli altri stati: titolo e testo, un pulsante e una riga sotto;
     // l'indirizzo per entrare sta in «Per entrare»
     return _PlayFrame(
       label: s.playingTitle(l.name),
-      main: [
-        MsRow(gap: 12, children: [MsAvatar(l.name), MsText.h2(s.playingTitle(l.name))]),
-        MsText(s.playingText(since, l.info.players.length), tone: MsTextTone.secondary),
-      ],
-      side: [
-        MsButton(
-          label: notify ? s.notifyOn : s.notifyMe,
-          size: MsButtonSize.lg,
-          variant: notify ? MsButtonVariant.secondary : MsButtonVariant.primary,
-          icon: MsIcon(notify ? MsIcons.check : MsIcons.bell),
-          block: true,
-          onPressed: () => app.setNotifyWhenFree(space.id, !notify),
-        ),
-        if (app.me?.admin ?? false)
-          MsButton(
-            label: s.forceAdmin,
-            variant: MsButtonVariant.ghost,
-            size: MsButtonSize.sm,
-            icon: const MsIcon(MsIcons.unlock),
-            block: true,
-            onPressed: () => showForceDialog(context, space.id),
-          )
-        else
-          MsText.small(s.hostLater(l.name), tone: MsTextTone.secondary, align: TextAlign.center),
-      ],
+      title: MsRow(gap: 12, children: [MsAvatar(l.name), MsText.h3(s.playingTitle(l.name))]),
+      text: s.playingText(since, l.info.players.length),
+      secondary: (app.me?.admin ?? false)
+          ? MsButton(
+              label: s.forceAdmin,
+              variant: MsButtonVariant.ghost,
+              icon: const MsIcon(MsIcons.unlock),
+              onPressed: () => showForceDialog(context, space.id),
+            )
+          : null,
+      primary: MsButton(
+        label: notify ? s.notifyOn : s.notifyMe,
+        size: MsButtonSize.lg,
+        variant: notify ? MsButtonVariant.secondary : MsButtonVariant.primary,
+        icon: MsIcon(notify ? MsIcons.check : MsIcons.bell),
+        onPressed: () => app.setNotifyWhenFree(space.id, !notify),
+      ),
     );
   }
 }
@@ -366,55 +366,44 @@ class _StalePanel extends StatelessWidget {
     if (app.me != null && l.memberId == app.me!.id) {
       return _PlayFrame(
         label: s.staleMineTitle,
-        main: [
-          MsText.h2(s.staleMineTitle),
-          MsText(s.staleMineText, tone: MsTextTone.secondary),
-        ],
-        side: [
-          // giallo: riprende una sessione interrotta, non è un Gioca normale
-          MsButton.play(
-            label: s.resume,
-            icon: const MsIcon(MsIcons.play),
-            variant: MsButtonVariant.warn,
-            block: true,
-            onPressed: app.connection == Connection.online
-                ? () => startPlay(app, space.id, force: true)
-                : null,
-          ),
-        ],
-      );
-    }
-    // titolo, testo e pulsanti come negli altri stati; cosa è al sicuro e
-    // cosa no sta nel pannello «Dove si trova il mondo» sotto
-    return _PlayFrame(
-      label: s.staleTitle(l.name),
-      main: [
-        MsText.h2(s.staleTitle(l.name)),
-        MsText(s.staleText(f.clock(beat), f.ago(beat, now)), tone: MsTextTone.secondary),
-      ],
-      side: [
-        MsButton(
-          label: s.forcePlay,
-          variant: MsButtonVariant.danger,
+        title: MsText.h3(s.staleMineTitle),
+        text: s.staleMineText,
+        value: s.lastSignal(f.ago(beat, now)),
+        // giallo: riprende una sessione interrotta, non è un Gioca normale
+        primary: MsButton(
+          label: s.resume,
+          variant: MsButtonVariant.warn,
           size: MsButtonSize.lg,
-          icon: const MsIcon(MsIcons.unlock),
-          block: true,
+          icon: const MsIcon(MsIcons.play),
           onPressed: app.connection == Connection.online
-              ? () => showForceDialog(context, space.id)
+              ? () => startPlay(app, space.id, force: true)
               : null,
         ),
-        MsButton(
-          label: s.wait(l.name),
-          variant: MsButtonVariant.ghost,
-          size: MsButtonSize.sm,
-          icon: const MsIcon(MsIcons.clock),
-          block: true,
-          onPressed: () async {
-            await app.setNotifyWhenFree(space.id, true);
-            if (context.mounted) toast(context, s.willNotify, tone: MsToastTone.info);
-          },
-        ),
-      ],
+      );
+    }
+    // cosa è al sicuro e cosa no sta nel pannello «Dove si trova il mondo»
+    return _PlayFrame(
+      label: s.staleTitle(l.name),
+      title: MsText.h3(s.staleTitle(l.name)),
+      text: s.staleText(f.clock(beat), f.ago(beat, now)),
+      secondary: MsButton(
+        label: s.wait(l.name),
+        variant: MsButtonVariant.ghost,
+        icon: const MsIcon(MsIcons.clock),
+        onPressed: () async {
+          await app.setNotifyWhenFree(space.id, true);
+          if (context.mounted) toast(context, s.willNotify, tone: MsToastTone.info);
+        },
+      ),
+      primary: MsButton(
+        label: s.forcePlay,
+        variant: MsButtonVariant.danger,
+        size: MsButtonSize.lg,
+        icon: const MsIcon(MsIcons.unlock),
+        onPressed: app.connection == Connection.online
+            ? () => showForceDialog(context, space.id)
+            : null,
+      ),
     );
   }
 }
@@ -456,14 +445,7 @@ class _MinePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = context.s.server;
-    return _PlayFrame(
-      label: s.mineTitle,
-      main: [
-        MsText.h2(s.mineTitle),
-        MsText(s.mineText, tone: MsTextTone.secondary),
-      ],
-      side: const [],
-    );
+    return _PlayFrame(label: s.mineTitle, title: MsText.h3(s.mineTitle), text: s.mineText);
   }
 }
 

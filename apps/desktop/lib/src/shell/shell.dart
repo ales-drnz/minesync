@@ -171,6 +171,7 @@ class AppSidebar extends StatelessWidget {
           MsNavItem(
             label: sp.name,
             icon: ServerNavIcon(url: serverIconUrl(app, sp.id, sp.head?.n)),
+            iconSize: 24,
             current: switch (route) {
               ServerRoute(:final space) ||
               SessionRoute(:final space) ||

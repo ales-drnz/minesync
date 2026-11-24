@@ -73,6 +73,7 @@ class MsNavItem extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.icon,
+    this.iconSize = 16,
     this.current = false,
     this.dashed = false,
     this.quiet = false,
@@ -85,6 +86,9 @@ class MsNavItem extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
   final Widget? icon;
+
+  /// Lato dell'icona (16; 24 per le icone dei server, che sono immagini).
+  final double iconSize;
   final bool current;
 
   /// Action slot with a dashed outline instead of a destination.
@@ -161,7 +165,7 @@ class MsNavItem extends StatelessWidget {
                 child: Row(
                   children: [
                     if (icon != null) ...[
-                      ExcludeSemantics(child: msIconSlot(context, icon!, fg)),
+                      ExcludeSemantics(child: msIconSlot(context, icon!, fg, size: iconSize)),
                       const PixelGap(12, 0),
                     ],
                     Expanded(

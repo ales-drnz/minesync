@@ -59,6 +59,7 @@ abstract final class ServerStrings {
   String get notifyMe;
   String get notifyText;
   String get notifyOn;
+  String lastSignal(String ago);
   String get worldWhere;
   String get forceAdmin;
   String get mineTitle;
@@ -281,6 +282,8 @@ final class _It implements ServerStrings {
   String get notifyText => 'notifica sul desktop';
   @override
   String get notifyOn => 'Avviso attivo';
+  @override
+  String lastSignal(String ago) => 'Ultimo segnale $ago';
   @override
   String get worldWhere => 'Dove si trova il mondo';
   @override
@@ -672,6 +675,8 @@ final class _En implements ServerStrings {
   String get notifyText => 'desktop notification';
   @override
   String get notifyOn => 'Notification on';
+  @override
+  String lastSignal(String ago) => 'Last signal $ago';
   @override
   String get worldWhere => 'Where the world is';
   @override

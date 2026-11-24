@@ -114,7 +114,7 @@ void main() {
     final s = serverState();
     await pumpApp(t, s);
     expect(msText('2 aggiornamenti da scaricare'), findsOneWidget);
-    expect(msText('2 file da scaricare'), findsOneWidget);
+    expect(msText('2 file da scaricare'), findsWidgets);
     expect(msText('Java 17 è troppo vecchio per questo modpack'), findsOneWidget);
     await t.ensureVisible(msButton('Usa Java 21'));
     await t.pump();

@@ -292,7 +292,8 @@ class ServerNavIcon extends StatelessWidget {
     const fallback = MsIcon(MsIcons.server);
     final u = url;
     if (u == null) return fallback;
-    final side = PixelScope.of(context).d(16);
+    // riempie lo spazio dell'icona della voce (24 px nella barra laterale)
+    final side = IconTheme.of(context).size ?? PixelScope.of(context).d(16);
     return Image.network(
       u.toString(),
       width: side,

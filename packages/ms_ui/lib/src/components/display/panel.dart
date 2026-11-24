@@ -23,7 +23,8 @@ enum MsPanelPadding {
 }
 
 /// Pannello in rilievo (`.ms-panel`): faccia --ms-panel, rilievo di 2 px e
-/// contorno con angoli smussati. [raised] aggiunge l'ombra netta di 6 px.
+/// contorno con angoli smussati. [raised] non cambia più l'aspetto: tutti i
+/// pannelli hanno lo stesso bordo, senza ombre diverse.
 ///
 /// Riempie la larghezza disponibile (è un blocco), arrotondata all'unità.
 /// Se il genitore impone un'altezza minima (una colonna di [MsEqualRow]) la
@@ -72,7 +73,6 @@ class MsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = MsTheme.colorsOf(context);
-    final drop = msBlend(c.drop, c.bg);
     final pad = switch (padding) {
       MsPanelPadding.normal => 16.0,
       MsPanelPadding.tight => 12.0,
@@ -88,11 +88,13 @@ class MsPanel extends StatelessWidget {
       label: label,
       child: MsUnitWidth(
         child: PixelFrame(
-          outset: raised ? const EdgeInsets.fromLTRB(2, 2, 6, 6) : const EdgeInsets.all(2),
+          // l'ombra del rilievo si disegna fuori dalla misura (il disegno non
+          // è ritagliato): la faccia è larga come quella dei pannelli piatti
+          // accanto e sotto, e i bordi restano allineati
+          outset: const EdgeInsets.all(2),
           fillHeight: true,
           repaintKey: (raised, c),
           painter: (p, w, h) {
-            if (raised) p.rect(6, 6, w, h, drop);
             p.ring(0, 0, w, h, c.pxOutline);
             p.rect(0, 0, w, h, c.panel);
             p.bevel(w, h, c.pxLight, c.pxShadow);
