@@ -16,10 +16,27 @@ import 'core.dart';
 /// The tooltip bubble alone (`.ms-tooltip`): inverted colours, stepped
 /// pointer at the bottom-left, optional [shortcut] key (`.ms-kbd`).
 class MsTooltipBubble extends StatelessWidget {
-  const MsTooltipBubble({super.key, required this.message, this.shortcut});
+  const MsTooltipBubble({
+    super.key,
+    required this.message,
+    this.shortcut,
+    this.tailRight = false,
+    this.tailUp = false,
+    this.tailCenter,
+  });
+
+  /// Distanza in px di design del centro della punta dal lato da cui parte
+  /// la nuvoletta (il centro del controllo); di default 20.
+  final double? tailCenter;
 
   final String message;
   final String? shortcut;
+
+  /// Punta verso destra (nuvoletta allineata al bordo destro del controllo).
+  final bool tailRight;
+
+  /// Punta in alto (nuvoletta sotto il controllo).
+  final bool tailUp;
 
   @override
   Widget build(BuildContext context) {
@@ -32,18 +49,28 @@ class MsTooltipBubble extends StatelessWidget {
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: g.d(284)),
         child: PixelFrame(
-          outset: const EdgeInsets.fromLTRB(2, 2, 6, 8),
+          outset: EdgeInsets.fromLTRB(2, tailUp ? 6 : 2, 6, 8),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          repaintKey: (c.text, c.drop),
+          repaintKey: (c.text, c.drop, tailRight, tailUp),
           painter: (p, w, h) {
             // ombra netta 4/6 px (traslucida, come --ms-drop)
             p.rect(6, h + 2, w, 6, c.drop);
             p.rect(w + 2, 8, 4, h - 6, c.drop);
             p.ring(0, 0, w, h, c.text);
             p.rect(0, 0, w, h, c.text);
-            // punta a gradini sotto, a 16 px da sinistra
-            p.rect(16, h + 2, 8, 2, c.text);
-            p.rect(18, h + 4, 4, 2, c.text);
+            // punta a gradini a 16 px dal lato da cui parte la nuvoletta,
+            // sotto o sopra secondo dove sta il controllo
+            // punta larga 8: si centra su [tailCenter], misurato dal bordo
+            // della nuvoletta senza l'ombra
+            final at = (((tailCenter ?? 20) - 4) / 2).roundToDouble() * 2;
+            final x = (tailRight ? w - at - 8 : at).clamp(4.0, w - 12);
+            if (tailUp) {
+              p.rect(x, -4, 8, 2, c.text);
+              p.rect(x + 2, -6, 4, 2, c.text);
+            } else {
+              p.rect(x, h + 2, 8, 2, c.text);
+              p.rect(x + 2, h + 4, 4, 2, c.text);
+            }
           },
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -165,6 +192,10 @@ class _MsTooltipState extends State<MsTooltip> {
             final right = box != null && pos.dx + box.size.width / 2 > screen.width / 2;
             final below = pos.dy < g.d(48);
             final x = right ? 1.0 : -1.0;
+            // centro del controllo misurato dal bordo della nuvoletta: a
+            // destra c'è l'ombra (6), a sinistra il bordo (2)
+            final tw = box != null && box.hasSize ? box.size.width / g.d(1) : 40.0;
+            final center = tw / 2 - (right ? 6 : 2);
             return CompositedTransformFollower(
               link: _link,
               showWhenUnlinked: false,
@@ -174,7 +205,13 @@ class _MsTooltipState extends State<MsTooltip> {
               child: Align(
                 alignment: Alignment(x, below ? -1 : 1),
                 child: IgnorePointer(
-                  child: MsTooltipBubble(message: widget.message, shortcut: widget.shortcut),
+                  child: MsTooltipBubble(
+                    message: widget.message,
+                    shortcut: widget.shortcut,
+                    tailRight: right,
+                    tailUp: below,
+                    tailCenter: center,
+                  ),
                 ),
               ),
             );
