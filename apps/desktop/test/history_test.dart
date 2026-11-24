@@ -90,6 +90,17 @@ void main() {
     expect(msText('world/region/r.1.0.mca'), findsOneWidget);
   });
 
+  test('storia indietro rispetto alla testa: va riletta', () {
+    final s = historyState();
+    final ss = s.spaceState('creativo');
+    expect(ss.historyBehind(57), isFalse);
+    // un salvataggio arrivato mentre la pagina era chiusa
+    expect(ss.historyBehind(58), isTrue);
+    expect(ss.historyBehind(null), isFalse);
+    ss.debugSet(history: const []);
+    expect(ss.historyBehind(58), isFalse, reason: 'vuota: la carica initState');
+  });
+
   testWidgets('ricerca per autore', (t) async {
     await pumpApp(t, historyState());
     await t.enterText(find.byType(EditableText), 'alice');

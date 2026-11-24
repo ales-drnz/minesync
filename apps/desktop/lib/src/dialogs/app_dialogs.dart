@@ -3,6 +3,7 @@
 // è quello sicuro; Esc equivale ad Annulla.
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/widgets.dart';
 import 'package:ms_core/ms_core.dart';
 import 'package:ms_protocol/ms_protocol.dart';
@@ -656,11 +657,20 @@ Future<CrashAction> showCrashDialog(
   BuildContext context, {
   required String server,
   required CrashInfo crash,
+  ValueListenable<CrashInfo?>? latest,
 }) async {
+  // con [latest] il dialogo mostra sempre l'ultimo crash: un crash nuovo
+  // mentre è aperto lo aggiorna invece di aprirne un altro sopra
+  Widget dialog(BuildContext ctx, CrashInfo c) =>
+      CrashDialog(server: server, crash: c, onAction: (a) => Navigator.of(ctx).pop(a));
   final r = await showMsDialog<CrashAction>(
     context: context,
-    builder: (ctx) =>
-        CrashDialog(server: server, crash: crash, onAction: (a) => Navigator.of(ctx).pop(a)),
+    builder: (ctx) => latest == null
+        ? dialog(ctx, crash)
+        : ValueListenableBuilder<CrashInfo?>(
+            valueListenable: latest,
+            builder: (ctx, c, _) => dialog(ctx, c ?? crash),
+          ),
   );
   return r ?? CrashAction.close;
 }

@@ -171,6 +171,10 @@ abstract final class SessionStrings {
   String get hubLostText;
   String get hubLostKeepOpen;
   String get hubBackTitle;
+
+  /// Un altro ha preso il server un attimo prima di questo Gioca.
+  String startedFirstTitle(String who);
+  String get startedFirstText;
   String get hubBackText;
 
   // notifiche del desktop
@@ -493,6 +497,11 @@ final class _It implements SessionStrings {
       'Se possibile, non chiudere MineSync finché l\'hub non torna raggiungibile.';
   @override
   String get hubBackTitle => 'Hub di nuovo raggiungibile';
+  @override
+  String startedFirstTitle(String who) => '$who ha avviato il server un attimo prima';
+  @override
+  String get startedFirstText =>
+      'Puoi entrare con il suo indirizzo o farti avvisare quando il server è libero.';
   @override
   String get hubBackText => 'I salvataggi in attesa sono sull\'hub.';
   @override
@@ -825,6 +834,11 @@ final class _En implements SessionStrings {
   String get hubLostKeepOpen => 'If possible, keep MineSync open until the hub is reachable again.';
   @override
   String get hubBackTitle => 'Hub reachable again';
+  @override
+  String startedFirstTitle(String who) => '$who started the server a moment earlier';
+  @override
+  String get startedFirstText =>
+      'You can join with their address or get notified when the server is free.';
   @override
   String get hubBackText => 'The pending saves are on the hub.';
   @override

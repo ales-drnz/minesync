@@ -136,7 +136,9 @@ class _ModpackScreenState extends State<ModpackScreen> {
         break;
     }
     return [
-      if (mp.locked) _LockedAlert(space: sp, mp: mp),
+      // durante la propria applicazione il lock è di chi applica: niente
+      // «X sta giocando» a sé stessi
+      if (mp.locked && !mp.applying) _LockedAlert(space: sp, mp: mp),
       if (mp.modrinthDown) _ModrinthDown(mp: mp),
       if (mp.watchReady && mp.watch != null)
         MsAlert(title: s.watchReady(mp.watch!.split('|').first), tone: MsAlertTone.ok),

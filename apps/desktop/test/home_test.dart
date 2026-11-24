@@ -433,6 +433,8 @@ void main() {
     expect(testo(const {'action': 'play'}), 'alice gioca su Avventura');
     expect(testo(const {'tookOver': 'carol'}), 'alice gioca su Avventura (era di carol)');
     expect(testo(const {'tookOver': 'alice'}), 'alice riprende Avventura');
+    // lock per caricare le mod: non una partita
+    expect(testo(const {'action': 'push'}), 'alice carica Avventura dall\'app');
     expect(s.home.eventBadge(EventType.ztnet), 'network');
     for (final type in EventType.all) {
       expect(s.home.eventBadge(type), isNotEmpty);

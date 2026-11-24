@@ -35,6 +35,10 @@ class _SessionScreenState extends State<SessionScreen> {
   StreamSubscription<SessionSignal>? _signals;
   bool _promptOpen = false;
   bool _conflictOpen = false;
+
+  /// Ultimo crash per il dialogo aperto (uno solo, che si aggiorna).
+  final _crash = ValueNotifier<CrashInfo?>(null);
+  bool _crashOpen = false;
   Object? _errorShown;
 
   var _filter = _Filter.all;
@@ -84,6 +88,7 @@ class _SessionScreenState extends State<SessionScreen> {
     _search.dispose();
     _searchFocus.dispose();
     _command.dispose();
+    _crash.dispose();
     _commandFocus.dispose();
     super.dispose();
   }
@@ -129,6 +134,18 @@ class _SessionScreenState extends State<SessionScreen> {
         !identical(e, _errorShown)) {
       _errorShown = e;
       final app = AppStateScope.read(context);
+      // un altro ha premuto Gioca un attimo prima: non è un errore, si torna
+      // al server con chi gioca, il suo indirizzo e «Avvisa quando è libero»
+      if (e is ApiError && e.code == ErrorCode.locked) {
+        final l = e.details['lock'];
+        final who = (l is Map<String, Object?> ? l['name'] as String? : null) ?? '?';
+        final t = context.s.session;
+        toast(context, t.startedFirstTitle(who), text: t.startedFirstText, tone: MsToastTone.info);
+        app.closeSession();
+        unawaited(app.refreshSpaces().catchError((Object _) {}));
+        app.go(ServerRoute(widget.space));
+        return;
+      }
       final a = await showStartError(context, server: s.name, error: e);
       switch (a) {
         case StartErrorAction.retry:
@@ -149,8 +166,13 @@ class _SessionScreenState extends State<SessionScreen> {
     final t = context.s.session;
     switch (sig) {
       case SignalCrashed(:final crash):
-        final a = await showCrashDialog(context, server: s.name, crash: crash);
-        if (a == CrashAction.dontRestart) await s.stop();
+        _crash.value = crash;
+        // già aperto: mostra da solo il crash nuovo, niente dialoghi impilati
+        if (_crashOpen) return;
+        _crashOpen = true;
+        final a = await showCrashDialog(context, server: s.name, crash: crash, latest: _crash);
+        _crashOpen = false;
+        if (a == CrashAction.dontRestart && s.active) await s.stop();
       case SignalHubBack():
         ToastScope.of(
           context,

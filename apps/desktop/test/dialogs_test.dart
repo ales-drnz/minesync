@@ -315,6 +315,32 @@ void main() {
     await _golden(t, 'crash', (c) => showCrashDialog(c, server: 'Survival', crash: crash));
   });
 
+  testWidgets('crash ripetuti: un solo dialogo, che mostra l\'ultimo', (t) async {
+    CrashInfo crash(int attempt, {bool restarting = true}) => CrashInfo(
+      at: at(18, 50 + attempt),
+      exitCode: 1,
+      restarting: restarting,
+      attempt: attempt,
+      maxAttempts: 2,
+      lastErrors: const ['Incompatible mods found!'],
+    );
+    final latest = ValueNotifier<CrashInfo?>(crash(1));
+    addTearDown(latest.dispose);
+    await pumpApp(t, _app());
+    final r = showCrashDialog(_ctx(t), server: 'Survival', crash: crash(1), latest: latest);
+    await t.pump(const Duration(milliseconds: 400));
+    expect(msTextContaining('alle 18:51'), findsOneWidget);
+    latest.value = crash(3, restarting: false);
+    await t.pump();
+    expect(find.byType(CrashDialog), findsOneWidget);
+    expect(msTextContaining('alle 18:51'), findsNothing);
+    expect(msTextContaining('alle 18:53'), findsOneWidget);
+    await t.tap(msButton('Chiudi'));
+    await _settle(t);
+    expect(await r, CrashAction.close);
+    expect(find.byType(CrashDialog), findsNothing);
+  });
+
   testWidgets('sessione terminata: golden', (t) async {
     final s = sampleSession(phase: SessionPhase.ended);
     await _golden(t, 'ended', (c) => showSessionEnded(c, s), state: _app(session: s));

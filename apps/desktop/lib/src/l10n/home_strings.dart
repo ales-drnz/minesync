@@ -243,6 +243,14 @@ final class _It implements HomeStrings {
     final sp = space ?? '?';
     return switch (type) {
       'push' => [(a, true), (' ha salvato ', false), (sp, true), (_sizeOf(data, f), false)],
+      // lock preso solo per caricare (mod applicate, modifiche locali): non
+      // è una partita
+      EventType.lock when data['action'] == 'push' => [
+        (a, true),
+        (' carica ', false),
+        (sp, true),
+        (' dall\'app', false),
+      ],
       EventType.lock => switch (data['tookOver']) {
         final String was when was == a => [(a, true), (' riprende ', false), (sp, true)],
         final String was => [
@@ -540,6 +548,12 @@ final class _En implements HomeStrings {
     final sp = space ?? '?';
     return switch (type) {
       'push' => [(a, true), (' saved ', false), (sp, true), (_sizeOf(data, f), false)],
+      EventType.lock when data['action'] == 'push' => [
+        (a, true),
+        (' is uploading ', false),
+        (sp, true),
+        (' from the app', false),
+      ],
       EventType.lock => switch (data['tookOver']) {
         final String was when was == a => [(a, true), (' resumes ', false), (sp, true)],
         final String was => [

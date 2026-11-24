@@ -430,6 +430,14 @@ void main() {
     expect(msButton('Togli dalla coda'), findsOneWidget);
   });
 
+  testWidgets('applicazione in corso: niente avviso «sta giocando» per il proprio lock', (t) async {
+    // survival è tenuto da bob nei dati di prova: qui lo tiene chi applica
+    final s = modState(space: 'survival', apply: const Applying('upload'));
+    await pumpApp(t, s, size: _big);
+    expect(s.modpack('survival').locked, isTrue);
+    expect(msTextContaining('sta giocando: le mod sono in sola lettura'), findsNothing);
+  });
+
   testWidgets('libero: Applica chiede conferma con il riepilogo', (t) async {
     await pumpApp(t, modState(), size: _big);
     await t.ensureVisible(msButton('Applica e carica sull\'hub'));

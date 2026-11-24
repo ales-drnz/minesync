@@ -49,6 +49,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
     if (ss.history.isEmpty) unawaited(ss.loadHistory());
   }
 
+  /// La lista si rilegge quando sull'hub c'è una versione più nuova della
+  /// prima caricata (salvataggi arrivati mentre la pagina era chiusa o
+  /// aperta), come nella panoramica.
+  void _maybeReload(SpaceSummary sp, SpaceState ss) {
+    if (!ss.historyBehind(sp.head?.n)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(ss.loadHistory());
+    });
+  }
+
   @override
   void dispose() {
     _query.dispose();
@@ -77,6 +87,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final sp = app.space(widget.space);
     if (sp == null) return const SizedBox.shrink();
     final ss = app.spaceState(sp.id);
+    _maybeReload(sp, ss);
     return ListenableBuilder(
       listenable: ss,
       builder: (context, _) {

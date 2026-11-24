@@ -76,6 +76,43 @@ void main() {
     expect(t.getRect(find.byType(ServerTabs)), inSession);
   });
 
+  testWidgets('Gioca quasi insieme: chi arriva dopo torna al server, senza errore', (t) async {
+    final s = SessionController(
+      client: HubClient(Uri.parse('http://192.0.2.1:8084/')),
+      space: 'survival',
+      name: 'Survival',
+      folder: '/home/alice/MineSync/survival',
+      me: 'alice',
+      clock: () => sampleNow,
+    );
+    addTearDown(() {
+      s.client.close(force: true);
+      s.dispose();
+    });
+    s.debugSet(
+      phase: SessionPhase.failed,
+      error: const ApiError(
+        ErrorCode.locked,
+        'space survival is locked by bob',
+        details: {
+          'lock': {'name': 'bob'},
+        },
+      ),
+    );
+    final a = sessionAppState(s);
+    await pumpApp(t, a, size: const Size(1280, 1500));
+    await t.pump(const Duration(milliseconds: 400));
+    expect(msText('Impossibile avviare Survival'), findsNothing);
+    expect(msText('Nessuna modifica'), findsNothing);
+    expect(a.route, const ServerRoute('survival'));
+    expect(a.session, isNull);
+    expect(
+      find.textContaining('bob ha avviato il server un attimo prima', findRichText: true),
+      findsOneWidget,
+    );
+    await t.pump(const Duration(seconds: 10));
+  });
+
   testWidgets('in gioco: golden', (t) async {
     await expectAppGolden(
       t,

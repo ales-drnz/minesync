@@ -544,6 +544,15 @@ final class SpaceState extends ChangeNotifier {
 
   /// Versioni caricate, dalla più nuova.
   List<GenerationSummary> get history => List.unmodifiable(_history);
+
+  /// La lista caricata non arriva alla testa [head] dell'hub (salvataggi
+  /// arrivati dopo): va riletta.
+  bool historyBehind(int? head) =>
+      head != null &&
+      !_historyLoading &&
+      _historyError == null &&
+      _history.isNotEmpty &&
+      _history.first.n != head;
   bool get historyLoading => _historyLoading;
 
   /// Non ci sono versioni più vecchie da caricare.
